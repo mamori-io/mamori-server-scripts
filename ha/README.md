@@ -1,107 +1,76 @@
-# mamori HA scripts
+# HA scripts
 
-Scripts for Mamori high-availability setup and maintenance.
+Server scripts for Mamori HA app nodes. For run order and commands, see
+[HA-README.md](HA-README.md).
+
+Docs: [HA install](https://doc.mamori.io/050-installation/ha-install).
+
+Each script accepts `-h` / `--help`.
 
 ## extract-cluster-details.sh
 
-Run on an existing app-node **host** (no need to enter the container). It sets
-`MAMORI_VAR` / `DERBY_PROPS` from the `mamori-var` Docker volume automatically.
+Run on an existing app-node **host**. Resolves `MAMORI_VAR` from the `mamori-var`
+Docker volume, reads derby properties and Postgres `rms.server_property`, and
+writes a `cluster-details.env` for joining a new node.
 
-```bash
-bash /tmp/extract-cluster-details.sh -o /tmp/cluster-details.env
-cat /tmp/cluster-details.env
-```
-
-Options: `-o/--output <file>`, `-a/--all` (dump every `rms.server_property`).
+- `-o` / `--output <file>` — output path
+- `-a` / `--all` — dump every `rms.server_property`
 
 ## validate-new-node.sh
 
-Pre-flight checks on a **new** app node before install/join (ports, disk, Docker,
-hostname, timezone `/etc/timezone`, swap). Uses [`server/server-port-check.sh`](../server/server-port-check.sh).
+Pre-flight checks on a **new** app node before install/join: ports, disk,
+Docker (≥26), hostname, `/etc/timezone`. Swap is warn-only.
 
-From the repo:
+Uses [`server/server-port-check.sh`](../server/server-port-check.sh) (keep repo
+layout, or copy that script alongside).
 
-```bash
-bash ha/validate-new-node.sh
-```
-
-On a remote node (copy both scripts into `/tmp`):
-
-```bash
-scp server/server-port-check.sh ha/validate-new-node.sh root@${HA_M3_HOST}:/tmp/
-bash /tmp/validate-new-node.sh -o /tmp/validate-new-node.report
-```
+- `-o` / `--output <file>` — write a report file
 
 Exit `0` only if all hard checks pass.
 
 ## get-ha-media.sh
 
-Download HA cluster node media (`mamori_cluster_docker.tgz`) per
-[Install HA Services](https://doc.mamori.io/050-installation/ha-install).
+Downloads HA cluster media (`mamori_cluster_docker.tgz`).
 
-```bash
-bash ha/get-ha-media.sh --dir /tmp
-# or on the new node:
-bash /tmp/get-ha-media.sh --dir /tmp
-```
-
-Defaults to the **ga** channel. Use `--channel dev` for development media.
-`--force` overwrites an existing tarball.
+- `--dir <path>` — download directory
+- `--channel ga|dev` — media channel (default: `ga`)
+- `--force` — overwrite existing tarball
 
 ## install-ha-node.sh
 
-Load the HA cluster image and `docker create` the app-node container (does **not**
-start or join). Per [Install HA Services](https://doc.mamori.io/050-installation/ha-install).
+`docker load`s the HA image and `docker create`s the app-node container.
+Does **not** start or join. Uses HA volumes only (`mamori-var`,
+`mamori-nginx-conf`). Sets `TZ` from `/etc/timezone` when present.
 
-```bash
-bash /tmp/get-ha-media.sh --dir /tmp
-bash /tmp/install-ha-node.sh --media /tmp/mamori_cluster_docker.tgz
-```
-
-Uses `/etc/timezone` for `TZ` when present. `--force` replaces an existing
-container with the same name.
+- `--media <tarball>` — path to `mamori_cluster_docker.tgz`
+- `-n` / `--name <container>` — container name (default: `mamori`)
+- `--force` — replace an existing container with the same name
 
 ## join-ha-node.sh
 
-Join the created container to the shared cluster DB using an env file from
-`extract-cluster-details.sh`. Run **after** install, **before** `docker start`.
-
-```bash
-# on existing hub (m1):
-bash /tmp/extract-cluster-details.sh -o /tmp/cluster-details.env
-
-# copy cluster-details.env to the new node, then:
-bash /tmp/join-ha-node.sh --env-file /tmp/cluster-details.env
-docker start mamori
-```
+Joins a created (not yet started) container to the shared cluster DB using
+an env file from `extract-cluster-details.sh`.
 
 Requires `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD` (and ideally
 `MAMORI_ENCRYPTION_KEY`) in the env file.
 
-## Node labels
+- `--env-file <file>` — cluster details env file
+- `-n` / `--name <container>` — container name (default: `mamori`)
 
-| Name | Role | Host |
-|------|------|------|
-| **m1** | Live app node | via gateway → `m1` (`10.240.0.11`) |
-| **m2** | Live app node | via gateway → `m2` (`10.240.0.228`) |
-| **m3** | New app node | `112.213.34.86` (`node1`) |
-| **gateway** | LB (HAProxy/nginx), SSH jump | `112.213.36.8:2200` |
+Run **after** `install-ha-node.sh` and **before** `docker start`.
 
-## Testing an HA node without the load balancer
+## enable-http-ui-test.sh
 
-HA node nginx listens on **HTTP :80** and sets `X-Force-HTTPS`, so Phoenix issues
-`WPORTALSESSION` with the **Secure** flag. Browsers will not store that cookie on
-`http://`, which causes `POST /sessions/login` to fail.
+Temporarily allows browser UI login over plain HTTP. Backs up the secure
+nginx config under `/opt/mamori/http-ui-test-backup/`, adds
+`proxy_cookie_flags WPORTALSESSION nosecure`, and restarts nginx.
 
-Cluster nginx includes `proxy_cookie_flags WPORTALSESSION nosecure ...` so direct
-HTTP UI testing works on the node. Prefer the LB/HTTPS for normal use.
+- `-n` / `--name <container>` — container name (default: `mamori`)
 
-Quick API check on the node:
+## restore-http-ui-test.sh
 
-```bash
-rm -f /tmp/cj
-curl -c /tmp/cj -b /tmp/cj -sS -o /dev/null http://127.0.0.1/
-curl -c /tmp/cj -b /tmp/cj -sS -X POST http://127.0.0.1/sessions/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"USER","password":"PASS"}'
-```
+Restores the backed-up secure nginx config after
+`enable-http-ui-test.sh` and restarts nginx.
+
+- `-n` / `--name <container>` — container name (default: `mamori`)
+- `-f` / `--file <path>` — specific backup file (default: active/latest backup)

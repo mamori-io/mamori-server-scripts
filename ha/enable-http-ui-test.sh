@@ -15,7 +15,6 @@ set -euo pipefail
 DOCKER="${DOCKER:-docker}"
 CONTAINER_NAME="${CONTAINER_NAME:-mamori}"
 NGINX_CONF="${NGINX_CONF:-/etc/nginx/conf.d/default.conf}"
-BACKUP_DIR="${BACKUP_DIR:-/opt/mamori/http-ui-test-backup}"
 HOST_BACKUP_DIR="${HOST_BACKUP_DIR:-/opt/mamori/http-ui-test-backup}"
 
 usage() {
@@ -59,6 +58,13 @@ if ! $DOCKER inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Do not overwrite a secure backup with an already-patched (HTTP test) config.
+if $DOCKER exec "$CONTAINER_NAME" grep -q 'proxy_cookie_flags WPORTALSESSION nosecure' "$NGINX_CONF" 2>/dev/null; then
+    echo "HTTP UI test mode already enabled (proxy_cookie_flags nosecure present)."
+    echo "Restore first with: bash restore-http-ui-test.sh"
+    exit 0
+fi
+
 mkdir -p "$HOST_BACKUP_DIR"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 HOST_BACKUP_FILE="${HOST_BACKUP_DIR}/default.conf.secure.${TS}"
@@ -67,12 +73,11 @@ MARKER="${HOST_BACKUP_DIR}/ACTIVE_BACKUP"
 echo "Backing up secure nginx config from ${CONTAINER_NAME}:${NGINX_CONF}"
 $DOCKER cp "${CONTAINER_NAME}:${NGINX_CONF}" "$HOST_BACKUP_FILE"
 printf '%s\n' "$HOST_BACKUP_FILE" > "$MARKER"
-# Keep a stable "latest" pointer for restore
 cp -f "$HOST_BACKUP_FILE" "${HOST_BACKUP_DIR}/default.conf.secure.latest"
 echo "  saved: $HOST_BACKUP_FILE"
 
 # Apply inside container: insert proxy_cookie_flags after x-forwarded-proto in location /
-$DOCKER exec "$CONTAINER_NAME" bash -s <<'EOS'
+$DOCKER exec -i "$CONTAINER_NAME" bash -s <<'EOS'
 set -euo pipefail
 CONF=/etc/nginx/conf.d/default.conf
 if grep -q 'proxy_cookie_flags WPORTALSESSION nosecure' "$CONF"; then
@@ -105,7 +110,7 @@ pos, n = insert_after
 flag = (
     n
     + "\n             # TEMP: HTTP UI test — allow WPORTALSESSION without Secure (restore-http-ui-test.sh)"
-    + "\n             proxy_cookie_flags WPORTALSESSION nosecure httponly samesite=strict;"
+    + "\n             proxy_cookie_flags WPORTALSESSION nosecure;"
 )
 t = t[:pos] + flag + t[pos + len(n):]
 p.write_text(t)
@@ -113,8 +118,13 @@ print("patched nginx for HTTP UI test")
 PY
 
 nginx -t
-nginx -s reload
-echo "nginx reloaded"
+if command -v sv >/dev/null 2>&1 && [[ -d /etc/service/nginx || -d /etc/sv/nginx ]]; then
+  sv restart nginx
+  echo "nginx restarted via sv"
+else
+  nginx -s reload
+  echo "nginx reloaded"
+fi
 EOS
 
 echo ""
