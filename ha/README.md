@@ -1,11 +1,27 @@
 # HA scripts
 
-Server scripts for Mamori HA app nodes and the gateway load balancer.
-For run order and commands, see [HA-README.md](HA-README.md).
+Server scripts for Mamori HA: shared Postgres, app nodes, and the gateway load balancer.
+For run order and host roles, see [HA-README.md](HA-README.md).
 
 Docs: [HA install](https://doc.mamori.io/050-installation/ha-install).
 
 Each script accepts `-h` / `--help`.
+
+## Shared Postgres (Postgres box)
+
+### install-ha-postgres.sh
+
+Pulls the Docker Official Image `postgres:18`, starts a persistent container,
+enables remote MD5 password auth, and creates empty databases `mamorisys`,
+`audit`, and `xcs`.
+
+- `-p` / `--password <secret>` — required (or `POSTGRES_PASSWORD`)
+- `-n` / `--name <container>` — container name (default: `postgres`)
+- `-i` / `--image <image>` — image tag (default: `postgres:18`)
+- `-v` / `--volume <name>` — data volume (default: `mamori-pg-data` → `/var/lib/postgresql`)
+- `--port <port>` — host port (default: `5432`)
+- `-f` / `--force` — replace an existing container with the same name
+- `--force-volume` — with `--force`, also delete the data volume
 
 ## App-node scripts
 
@@ -63,9 +79,11 @@ Run **after** `install-ha-node.sh` and **before** `docker start`.
 
 ### enable-http-ui-test.sh
 
-Temporarily allows browser UI login over plain HTTP. Backs up the secure
-nginx config under `/opt/mamori/http-ui-test-backup/`, adds
-`proxy_cookie_flags WPORTALSESSION nosecure`, and restarts nginx.
+Temporarily allows browser UI login over plain HTTP. Use after
+`docker start` to **verify a node before registering it on the LB**.
+Backs up the secure nginx config under `/opt/mamori/http-ui-test-backup/`,
+adds `proxy_cookie_flags WPORTALSESSION nosecure`, and restarts nginx.
+Always run `restore-http-ui-test.sh` when finished (and before LB register).
 
 - `-n` / `--name <container>` — container name (default: `mamori`)
 
