@@ -38,6 +38,8 @@ writes a `cluster-details.env` for joining a new node.
 
 Pre-flight checks on a **new** app node before install/join: ports, disk,
 Docker (≥26), hostname, `/etc/timezone`. Swap is warn-only.
+Also ensures `MAMORI_ROOT_PASSWORD` when `mamori-var` needs portal root
+bootstrap (prompts if required).
 
 Uses [`server/server-port-check.sh`](../server/server-port-check.sh) (keep repo
 layout, or copy that script alongside).
@@ -59,6 +61,7 @@ Downloads HA cluster media (`mamori_cluster_docker.tgz`).
 `docker load`s the HA image and `docker create`s the app-node container.
 Does **not** start or join. Uses HA volumes only (`mamori-var`,
 `mamori-nginx-conf`). Sets `TZ` from `/etc/timezone` when present.
+On a fresh `mamori-var`, passes `MAMORI_ROOT_PASSWORD` for first-boot bootstrap.
 
 - `--media <tarball>` — path to `mamori_cluster_docker.tgz`
 - `-n` / `--name <container>` — container name (default: `mamori`)
@@ -75,7 +78,15 @@ Requires `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD` (and ideally
 - `--env-file <file>` — cluster details env file
 - `-n` / `--name <container>` — container name (default: `mamori`)
 
-Run **after** `install-ha-node.sh` and **before** `docker start`.
+Run **after** `install-ha-node.sh` and **before** `start-ha-node.sh`.
+
+### start-ha-node.sh
+
+Starts the app-node container, then recreates it **without**
+`MAMORI_ROOT_PASSWORD` once `derby.user.root` is stored (so the secret is
+not left on the container config). Deletes `.mamori-root-password.env`.
+
+- `-n` / `--name <container>` — container name (default: `mamori`)
 
 ### enable-http-ui-test.sh
 

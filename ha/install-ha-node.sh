@@ -15,12 +15,20 @@ CONTAINER_NAME="${CONTAINER_NAME:-mamori}"
 IMAGE_NAME="${IMAGE_NAME:-mamori}"
 FORCE=0
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+
 usage() {
     cat <<'EOF'
 Usage: install-ha-node.sh [options]
 
 Load mamori_cluster_docker.tgz and docker-create the HA app-node container.
 Does not start the container or join the cluster.
+
+On a fresh mamori-var volume, prompts for (or uses) MAMORI_ROOT_PASSWORD and
+passes it into docker create for first-boot bootstrap. After docker start,
+run: bash ../lib/scrub-mamori-root-password-env.sh  (or ha/start-ha-node.sh)
 
 Options:
   -m, --media <file>     Path to cluster image tarball
@@ -32,6 +40,7 @@ Options:
 
 Environment:
   DOCKER                 Docker CLI (default: docker). Example: DOCKER="sudo docker"
+  MAMORI_ROOT_PASSWORD   Portal root password for first boot (prompted if required)
 EOF
 }
 
@@ -144,22 +153,32 @@ fi
 echo "Loading image from $MEDIA_FILE ..."
 $DOCKER load < "$MEDIA_FILE"
 
+export DOCKER
+ensure_mamori_root_password
+
 echo "Creating container $CONTAINER_NAME ..."
 # Volumes match HA install docs (no local postgres/influx/grafana volumes).
-$DOCKER create \
-        --network host \
-        --restart always \
-        --privileged \
-        --log-opt max-size=10m --log-opt max-file=10 \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v mamori-var:/opt/mamori/var \
-        -v mamori-nginx-conf:/etc/nginx \
-        -v /proc:/host/proc:ro \
-        -e "TZ=${TZ_VALUE}" \
-        --name "$CONTAINER_NAME" "$IMAGE_NAME" /sbin/my_init
+CREATE_ARGS=(
+        --network host
+        --restart always
+        --privileged
+        --log-opt max-size=10m --log-opt max-file=10
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v mamori-var:/opt/mamori/var
+        -v mamori-nginx-conf:/etc/nginx
+        -v /proc:/host/proc:ro
+        -e "TZ=${TZ_VALUE}"
+        --name "$CONTAINER_NAME"
+)
+if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
+    CREATE_ARGS+=(-e "MAMORI_ROOT_PASSWORD=${MAMORI_ROOT_PASSWORD}")
+fi
+
+$DOCKER create "${CREATE_ARGS[@]}" "$IMAGE_NAME" /sbin/my_init
 
 echo ""
 echo "Created container '$CONTAINER_NAME' (not started)."
 echo "Next steps per HA docs:"
-echo "  1. join shared DB:  docker run --rm -it --volumes-from $CONTAINER_NAME $IMAGE_NAME ..."
-echo "  2. start:           $DOCKER start $CONTAINER_NAME"
+echo "  1. join shared DB:  bash join-ha-node.sh ..."
+echo "  2. start + scrub:   bash start-ha-node.sh"
+unset MAMORI_ROOT_PASSWORD 2>/dev/null || true

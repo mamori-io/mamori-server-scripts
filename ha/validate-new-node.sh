@@ -39,6 +39,7 @@ Checks:
   - Hostname resolution (getent hosts)
   - Timezone (/etc/timezone set and matches timedatectl)
   - Swap (optional warning if missing — some providers disallow it)
+  - Portal root password (MAMORI_ROOT_PASSWORD) when mamori-var needs bootstrap
 
 Options:
   -o, --output <file>   Also write the full report to this file
@@ -46,6 +47,8 @@ Options:
 
 Environment:
   PORT_CHECK_SCRIPT     Override path to server-port-check.sh
+  DOCKER                Docker CLI (default: docker)
+  MAMORI_ROOT_PASSWORD  Portal root password for first boot (prompted if required)
 EOF
 }
 
@@ -279,6 +282,22 @@ else
     warn "No active swap (optional — some providers disallow swap). Install docs recommend 4GB when allowed."
     info "If permitted: fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
     info "  echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab"
+fi
+echo ""
+
+# ---------- portal root password (bootstrap) ----------
+echo "--- Portal root password ---"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+export DOCKER="${DOCKER:-docker}"
+if ensure_mamori_root_password; then
+    if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
+        pass "MAMORI_ROOT_PASSWORD ready for first-boot bootstrap"
+    else
+        pass "Portal root password already configured on mamori-var (bootstrap not required)"
+    fi
+else
+    fail "Could not ensure MAMORI_ROOT_PASSWORD (required for fresh mamori-var)"
 fi
 echo ""
 

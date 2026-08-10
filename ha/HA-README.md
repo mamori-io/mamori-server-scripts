@@ -75,8 +75,12 @@ bash validate-new-node.sh
 bash get-ha-media.sh --dir /tmp
 bash install-ha-node.sh --media /tmp/mamori_cluster_docker.tgz
 bash join-ha-node.sh --env-file /tmp/cluster-details.env
-docker start mamori
+bash start-ha-node.sh
 ```
+
+`validate-new-node.sh` / `install-ha-node.sh` prompt for the portal **root**
+password when `mamori-var` is fresh (`MAMORI_ROOT_PASSWORD`). First boot stores
+it encrypted; `start-ha-node.sh` then removes that env from the container.
 
 First boot creates schema/objects in the shared databases. Watch progress:
 
@@ -196,7 +200,7 @@ bash join-ha-node.sh --env-file /tmp/cluster-details.env
 ### 6. Start the node
 
 ```bash
-docker start mamori
+bash start-ha-node.sh
 ```
 
 Wait until the node has finished starting (for example `docker exec -it mamori tail -F /opt/mamori/var/log/mamori_fqod.log`).
@@ -267,7 +271,7 @@ bash manage-lb-node.sh --register --name <hostname> --ip <internal-ip> --dry-run
 
 ## Verify a node before the load balancer
 
-Use these checks on **every** new app node (including node1) after `docker start mamori` and **before** `manage-lb-node.sh --register`. Default HA nginx keeps Secure session cookies (correct behind HTTPS LB); browsers will not log in over plain HTTP until Option B temporarily adjusts nginx.
+Use these checks on **every** new app node (including node1) after `start-ha-node.sh` and **before** `manage-lb-node.sh --register`. Default HA nginx keeps Secure session cookies (correct behind HTTPS LB); browsers will not log in over plain HTTP until Option B temporarily adjusts nginx.
 
 ### Option A — curl (no nginx change)
 
