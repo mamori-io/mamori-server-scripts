@@ -28,7 +28,7 @@ Usage: install-ha-postgres.sh --password <secret> [options]
 
 Pull and run official postgres:18 for Mamori HA shared databases.
 Creates databases mamorisys, audit, and xcs when missing.
-Configures host MD5 auth for remote app-node connections.
+Configures host SCRAM-SHA-256 auth for remote app-node connections.
 
 Options:
   -p, --password <secret>   Superuser password (or set POSTGRES_PASSWORD)
@@ -146,19 +146,19 @@ $DOCKER pull "$IMAGE"
 
 echo "Creating and starting container '$CONTAINER_NAME' ..."
 # PG 18+: mount at /var/lib/postgresql (not .../data).
-# POSTGRES_HOST_AUTH_METHOD=md5 matches Mamori HA docs (remote MD5 auth).
-# password_encryption=md5 keeps stored passwords compatible with md5 host auth.
+# POSTGRES_HOST_AUTH_METHOD=scram-sha-256 matches Mamori HA docs (remote SCRAM-SHA-256 auth).
+# password_encryption=scram-sha-256 stores passwords as SCRAM verifiers for that host auth.
 $DOCKER run -d \
     --name "$CONTAINER_NAME" \
     --restart always \
     --log-opt max-size=10m --log-opt max-file=5 \
     -e "POSTGRES_USER=${PG_USER}" \
     -e "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}" \
-    -e "POSTGRES_HOST_AUTH_METHOD=md5" \
+    -e "POSTGRES_HOST_AUTH_METHOD=scram-sha-256" \
     -v "${VOLUME_NAME}:/var/lib/postgresql" \
     -p "${PG_PORT}:5432" \
     "$IMAGE" \
-    -c password_encryption=md5 \
+    -c password_encryption=scram-sha-256 \
     -c listen_addresses='*'
 
 echo "Waiting for PostgreSQL to accept connections ..."

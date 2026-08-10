@@ -12,7 +12,7 @@ Each script accepts `-h` / `--help`.
 ### install-ha-postgres.sh
 
 Pulls the Docker Official Image `postgres:18`, starts a persistent container,
-enables remote MD5 password auth, and creates empty databases `mamorisys`,
+enables remote SCRAM-SHA-256 password auth, and creates empty databases `mamorisys`,
 `audit`, and `xcs`.
 
 - `-p` / `--password <secret>` — required (or `POSTGRES_PASSWORD`)

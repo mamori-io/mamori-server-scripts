@@ -15,7 +15,7 @@ Docs: [HA install](https://doc.mamori.io/050-installation/ha-install).
 |--------|----------|
 | **LB / gateway** | nginx (HTTPS → app `:80`), HAProxy (DB/SSH/etc. proxies → app nodes) |
 | **App nodes** | Mamori container only (`mamori-var`, `mamori-nginx-conf`) |
-| **Postgres box** | PostgreSQL 18 (`mamorisys`, `audit`, `xcs`), remote MD5 auth |
+| **Postgres box** | PostgreSQL 18 (`mamorisys`, `audit`, `xcs`), remote SCRAM-SHA-256 auth |
 | **Shared-services box** | Mosquitto (`:1883`), InfluxDB (`:8086`), Grafana (`:3000`) |
 
 Do **not** put Mosquitto / Influx / Grafana on the LB or Postgres host. App nodes do not run local Postgres/Influx/Grafana volumes.
