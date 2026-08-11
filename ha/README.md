@@ -11,9 +11,9 @@ Each script accepts `-h` / `--help`.
 
 ### install-ha-postgres.sh
 
-Pulls the Docker Official Image `postgres:18`, starts a persistent container,
-enables remote SCRAM-SHA-256 password auth, and creates empty databases `mamorisys`,
-`audit`, and `xcs`.
+Pulls the Docker Official Image `postgres:18`, starts a persistent container
+with remote SCRAM-SHA-256 auth, then runs `init-ha-postgres.sh` and
+`check-ha-postgres.sh`.
 
 - `-p` / `--password <secret>` — required (or `POSTGRES_PASSWORD`)
 - `-n` / `--name <container>` — container name (default: `postgres`)
@@ -22,6 +22,22 @@ enables remote SCRAM-SHA-256 password auth, and creates empty databases `mamoris
 - `--port <port>` — host port (default: `5432`)
 - `-f` / `--force` — replace an existing container with the same name
 - `--force-volume` — with `--force`, also delete the data volume
+
+### init-ha-postgres.sh
+
+Create empty databases `mamorisys`, `audit`, and `xcs` on an **existing**
+Postgres instance (native, managed, or the container from
+`install-ha-postgres.sh`). Idempotent. Does not install Postgres or change
+`pg_hba.conf`.
+
+- `--host` / `--port` / `--user` / `-p` `--password` (or `PG_*`)
+- `-n` / `--container` — `docker exec` instead of host `psql`
+
+### check-ha-postgres.sh
+
+Verify Postgres is reachable and `mamorisys`, `audit`, and `xcs` exist.
+Exit `0` only if all hard checks pass. Same connection flags as init.
+Warns if `password_encryption` is not `scram-sha-256`.
 
 ## App-node scripts
 

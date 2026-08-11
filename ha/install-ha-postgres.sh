@@ -2,8 +2,8 @@
 #
 # Mamori LLC copyright 2026.
 #
-# Install shared-cluster PostgreSQL 18 via the Docker Official Image and prepare
-# it for Mamori HA (remote password auth + mamorisys / audit / xcs databases).
+# Install shared-cluster PostgreSQL 18 via the Docker Official Image, then
+# initialize and check Mamori HA databases (init-ha-postgres.sh / check-ha-postgres.sh).
 # Run on the dedicated Postgres host.
 #
 # Docs: https://doc.mamori.io/050-installation/ha-install
@@ -11,6 +11,7 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER="${DOCKER:-docker}"
 IMAGE="${IMAGE:-postgres:18}"
 CONTAINER_NAME="${CONTAINER_NAME:-postgres}"
@@ -26,8 +27,8 @@ usage() {
     cat <<'EOF'
 Usage: install-ha-postgres.sh --password <secret> [options]
 
-Pull and run official postgres:18 for Mamori HA shared databases.
-Creates databases mamorisys, audit, and xcs when missing.
+Pull and run official postgres:18 for Mamori HA, then initialize and check
+databases mamorisys, audit, and xcs (via init-ha-postgres.sh / check-ha-postgres.sh).
 Configures host SCRAM-SHA-256 auth for remote app-node connections.
 
 Options:
@@ -179,24 +180,24 @@ if [[ "$ready" -ne 1 ]]; then
     exit 1
 fi
 
-create_db_if_missing() {
-    local db="$1"
-    local exists
-    exists="$($DOCKER exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
-        psql -U "$PG_USER" -h 127.0.0.1 -d postgres -Atqc \
-        "SELECT 1 FROM pg_database WHERE datname='${db}'")"
-    if [[ "$exists" == "1" ]]; then
-        echo "Database '$db' already exists"
-    else
-        echo "Creating database '$db' ..."
-        $DOCKER exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
-            psql -U "$PG_USER" -h 127.0.0.1 -d postgres -c "CREATE DATABASE ${db};"
-    fi
-}
+export DOCKER
+echo ""
+echo "Initializing Mamori databases ..."
+bash "$SCRIPT_DIR/init-ha-postgres.sh" \
+    --host 127.0.0.1 \
+    --port "$PG_PORT" \
+    --user "$PG_USER" \
+    --password "$POSTGRES_PASSWORD" \
+    --container "$CONTAINER_NAME"
 
-create_db_if_missing mamorisys
-create_db_if_missing audit
-create_db_if_missing xcs
+echo ""
+echo "Checking Mamori databases ..."
+bash "$SCRIPT_DIR/check-ha-postgres.sh" \
+    --host 127.0.0.1 \
+    --port "$PG_PORT" \
+    --user "$PG_USER" \
+    --password "$POSTGRES_PASSWORD" \
+    --container "$CONTAINER_NAME"
 
 echo ""
 echo "PostgreSQL HA shared database is ready."

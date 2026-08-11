@@ -44,11 +44,24 @@ Do **not** put Mosquitto / Influx / Grafana on the LB or Postgres host. App node
 
 ## Bootstrap shared Postgres (Postgres box)
 
+### Docker Postgres (provided script)
+
+Installs PostgreSQL 18, then initializes and checks `mamorisys` / `audit` / `xcs`:
+
 ```bash
 bash install-ha-postgres.sh --password 'choose-a-strong-password'
 ```
 
-Verify from another host:
+### Your own Postgres (native or managed)
+
+Configure remote SCRAM-SHA-256 auth and network access yourself, then:
+
+```bash
+bash init-ha-postgres.sh --host <pg-host> --port 5432 --user postgres --password 'choose-a-strong-password'
+bash check-ha-postgres.sh --host <pg-host> --port 5432 --user postgres --password 'choose-a-strong-password'
+```
+
+Verify from an app-node host:
 
 ```bash
 PGPASSWORD='choose-a-strong-password' psql --host <pg-host> --port 5432 -U postgres -d mamorisys -c 'select version()'
