@@ -20,7 +20,8 @@ RED="\e[31m"
 YELLOW="\e[33m"
 RESET="\e[0m"
 
-MIN_ROOT_GB=50
+MIN_ROOT_GB=10
+REC_ROOT_GB=50
 MIN_VAR_AVAIL_GB=15
 MIN_DOCKER_MAJOR=26
 MIN_RAM_GB=2
@@ -34,7 +35,7 @@ Validate that this host is ready for a Mamori install / HA app-node join.
 
 Checks:
   - Ports (via server/server-port-check.sh)
-  - Disk space (root >= 50GB total, /var available >= 15GB)
+  - Disk space (root total: fail < 10GB, warn < 50GB; /var available >= 15GB)
   - Docker (>= 26, not Snap)
   - Hostname resolution (getent hosts)
   - Timezone (/etc/timezone set and matches timedatectl)
@@ -195,10 +196,12 @@ VAR_AVAIL_GB="$(bytes_to_gb "$VAR_AVAIL_KB")"
 info "Root total: ${ROOT_TOTAL_GB}GB  available: ${ROOT_AVAIL_GB}GB"
 info "/var available: ${VAR_AVAIL_GB}GB"
 
-if [[ "$ROOT_TOTAL_GB" -ge "$MIN_ROOT_GB" ]]; then
-    pass "Root filesystem size ${ROOT_TOTAL_GB}GB >= ${MIN_ROOT_GB}GB"
+if [[ "$ROOT_TOTAL_GB" -lt "$MIN_ROOT_GB" ]]; then
+    fail "Root filesystem size ${ROOT_TOTAL_GB}GB < required minimum ${MIN_ROOT_GB}GB"
+elif [[ "$ROOT_TOTAL_GB" -lt "$REC_ROOT_GB" ]]; then
+    warn "Root filesystem size ${ROOT_TOTAL_GB}GB is below recommended ${REC_ROOT_GB}GB (minimum ${MIN_ROOT_GB}GB met)"
 else
-    fail "Root filesystem size ${ROOT_TOTAL_GB}GB < required ${MIN_ROOT_GB}GB"
+    pass "Root filesystem size ${ROOT_TOTAL_GB}GB >= recommended ${REC_ROOT_GB}GB"
 fi
 
 if [[ "$VAR_AVAIL_GB" -ge "$MIN_VAR_AVAIL_GB" ]]; then
