@@ -31,6 +31,7 @@ Verify the host firewall is active and allows ports from the Mamori profile
 
 Options:
   --wireguard / --wg-cidr / --db-proxies / --rdp / --web-proxy
+  --internet-exposed / --db-public
                          Override profile for this check (same as setup-firewall.sh)
   -h, --help             Show this help
 EOF
@@ -41,7 +42,11 @@ FLAG_WIREGUARD=0
 FLAG_DB=0
 FLAG_RDP=0
 FLAG_WEB=0
+FLAG_INTERNET=0
+FLAG_DB_PUBLIC=0
 FLAG_WG_CIDR=""
+SET_INTERNET=0
+SET_DB_PUBLIC=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -53,6 +58,8 @@ while [[ $# -gt 0 ]]; do
             USED_FLAGS=1
             ;;
         --db-proxies) FLAG_DB=1; USED_FLAGS=1 ;;
+        --internet-exposed) FLAG_INTERNET=1; SET_INTERNET=1; USED_FLAGS=1 ;;
+        --db-public) FLAG_DB_PUBLIC=1; SET_DB_PUBLIC=1; USED_FLAGS=1 ;;
         --rdp) FLAG_RDP=1; USED_FLAGS=1 ;;
         --web-proxy) FLAG_WEB=1; USED_FLAGS=1 ;;
         -h|--help) usage; exit 0 ;;
@@ -78,6 +85,12 @@ if [[ "$USED_FLAGS" -eq 1 ]]; then
     MAMORI_FW_RDP="$FLAG_RDP"
     MAMORI_FW_WEB_PROXY="$FLAG_WEB"
     [[ -n "$FLAG_WG_CIDR" ]] && MAMORI_FW_WG_CIDR="$FLAG_WG_CIDR"
+    if [[ "$SET_INTERNET" -eq 1 ]]; then
+        MAMORI_FW_INTERNET_EXPOSED="$FLAG_INTERNET"
+    fi
+    if [[ "$SET_DB_PUBLIC" -eq 1 ]]; then
+        MAMORI_FW_DB_PUBLIC="$FLAG_DB_PUBLIC"
+    fi
 fi
 
 if [[ -z "${MAMORI_FW_BACKEND:-}" ]]; then
