@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
 
 DOCKER="${DOCKER:-sudo podman}"
 export DOCKER
@@ -24,7 +26,7 @@ ensure_mamori_root_password
 # pull the mamori docker image
 $DOCKER pull docker.io/iomamori/mamori-all-in-one:latest
 
-TZ_VALUE="$(echo $(hash=$(md5sum /etc/localtime | cut -d " " -f 1) ; find /usr/share/zoneinfo -type f -print0 | while read -r -d '' f; do md5sum "$f" | grep "$hash" && break ; done) | rev | cut -d "/" -f 2,1 | rev)"
+TZ_VALUE="$(host_timezone_for_container)"
 
 CREATE_ARGS=(
     --network host

@@ -18,6 +18,8 @@ FORCE=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
 
 usage() {
     cat <<'EOF'
@@ -102,16 +104,7 @@ resolve_media() {
     return 1
 }
 
-resolve_tz() {
-    if [[ -f /etc/timezone ]]; then
-        tr -d '[:space:]' < /etc/timezone
-        return 0
-    fi
-    if command -v timedatectl >/dev/null 2>&1; then
-        timedatectl show -p Timezone --value 2>/dev/null && return 0
-    fi
-    printf '%s' "Etc/UTC"
-}
+TZ_VALUE="$(host_timezone_for_container)"
 
 if ! command -v "${DOCKER%% *}" >/dev/null 2>&1 && ! $DOCKER version >/dev/null 2>&1; then
     echo "ERROR: docker not available (DOCKER='$DOCKER')" >&2
@@ -128,8 +121,6 @@ if [[ ! -f "$MEDIA_FILE" ]]; then
     echo "ERROR: media file not found: $MEDIA_FILE" >&2
     exit 1
 fi
-
-TZ_VALUE="$(resolve_tz)"
 
 echo "HA node install (load + create)"
 echo "  media:     $MEDIA_FILE"

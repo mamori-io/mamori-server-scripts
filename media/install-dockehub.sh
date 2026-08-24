@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
 
 DOCKER="${DOCKER:-sudo docker}"
 export DOCKER
@@ -19,6 +21,8 @@ CONTAINER_NAME="${CONTAINER_NAME:-mamori}"
 ensure_mamori_root_password
 
 $DOCKER pull iomamori/mamori-all-in-one:latest
+
+TZ_VALUE="$(host_timezone_for_container)"
 
 CREATE_ARGS=(
     --network host
@@ -34,7 +38,7 @@ CREATE_ARGS=(
     -v mamori-influxdb-data:/var/lib/influxdb
     -v mamori-grafana:/opt/mamori/grafana
     -v /proc:/host/proc:ro
-    -e "TZ=$(cat /etc/timezone)"
+    -e "TZ=${TZ_VALUE}"
     --name "$CONTAINER_NAME"
 )
 

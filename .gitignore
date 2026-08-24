@@ -2,3 +2,4 @@
 *.env.local
 *.mamori-root-password.env
 .mamori-root-password.env
+.mamori-firewall.env

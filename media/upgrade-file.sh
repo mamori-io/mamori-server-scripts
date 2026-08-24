@@ -5,6 +5,11 @@
 # Upgrades a running Mamori all-in-one deployment by loading a new image from mamori_mon_docker.tgz and
 # recreating the container with preserved volumes (replaces old container and image).
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
+TZ_VALUE="$(host_timezone_for_container)"
+
 # clean up any system logs that are filling the disk
 sudo journalctl --vacuum-size=10M
 
@@ -36,7 +41,7 @@ sudo docker create \
         -v mamori-influxdb-conf:/etc/influxdb \
         -v mamori-grafana:/opt/mamori/grafana \
         -v /proc:/host/proc:ro \
-        -e TZ=`cat /etc/timezone` \
+        -e "TZ=${TZ_VALUE}" \
         --name mamori mamori-all-in-one /sbin/my_init
 
 sudo docker start mamori
