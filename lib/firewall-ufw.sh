@@ -33,7 +33,8 @@ mamori_fw_ufw_apply() {
     done < <(mamori_fw_expected_port_rules)
 
     if [[ "${MAMORI_FW_WIREGUARD}" == "1" ]]; then
-        sudo ufw allow from "${MAMORI_FW_WG_CIDR}" comment "Mamori WireGuard clients"
+        # "to any" so status consistently shows the source CIDR allow
+        sudo ufw allow from "${MAMORI_FW_WG_CIDR}" to any comment "Mamori WireGuard clients"
     fi
 
     sudo ufw --force enable
@@ -63,8 +64,27 @@ mamori_fw_ufw_has_port() {
 mamori_fw_ufw_has_from_cidr() {
     local cidr="$1"
     local status
+    # ufw layouts vary; check plain, verbose, and numbered output
     status="$(sudo ufw status 2>/dev/null || true)"
-    echo "$status" | grep -F "$cidr" | grep -qi ALLOW
+    if echo "$status" | grep -F "$cidr" | grep -qiE 'ALLOW|ACCEPT'; then
+        return 0
+    fi
+    status="$(sudo ufw status verbose 2>/dev/null || true)"
+    if echo "$status" | grep -F "$cidr" | grep -qiE 'ALLOW|ACCEPT|ALLOW IN'; then
+        return 0
+    fi
+    status="$(sudo ufw status numbered 2>/dev/null || true)"
+    if echo "$status" | grep -F "$cidr" | grep -qiE 'ALLOW|ACCEPT|ALLOW IN'; then
+        return 0
+    fi
+    # Fallback: rules file (comment may be omitted from status on some versions)
+    if sudo grep -F "$cidr" /etc/ufw/user.rules 2>/dev/null | grep -q ACCEPT; then
+        return 0
+    fi
+    if sudo grep -F "$cidr" /etc/ufw/user6.rules 2>/dev/null | grep -q ACCEPT; then
+        return 0
+    fi
+    return 1
 }
 
 mamori_fw_ufw_is_active() {

@@ -68,7 +68,14 @@ mamori_fw_firewalld_has_from_cidr() {
     local zone="${MAMORI_FW_FIREWALLD_ZONE}"
     local rules
     rules="$(sudo firewall-cmd --zone="$zone" --list-rich-rules 2>/dev/null || true)"
-    echo "$rules" | grep -F "source address=\"${cidr}\"" | grep -q accept
+    if echo "$rules" | grep -F "$cidr" | grep -qi accept; then
+        return 0
+    fi
+    rules="$(sudo firewall-cmd --permanent --zone="$zone" --list-rich-rules 2>/dev/null || true)"
+    if echo "$rules" | grep -F "$cidr" | grep -qi accept; then
+        return 0
+    fi
+    return 1
 }
 
 mamori_fw_firewalld_is_active() {

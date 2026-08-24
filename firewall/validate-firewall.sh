@@ -156,13 +156,24 @@ while IFS='|' read -r proto port comment; do
     else
         fail "${proto^^}/$port not allowed ($comment)"
     fi
-done < <(mamori_fw_expected_port_rules)
+done < <(mamori_fw_expected_validate_port_rules)
 
 if [[ "${MAMORI_FW_WIREGUARD}" == "1" ]]; then
     if $has_cidr "${MAMORI_FW_WG_CIDR}"; then
-        pass "WireGuard client network ${MAMORI_FW_WG_CIDR} allowed"
+        pass "WireGuard client network ${MAMORI_FW_WG_CIDR} allowed (all ports from clients)"
     else
         fail "WireGuard client network ${MAMORI_FW_WG_CIDR} not found in firewall rules"
+        info "Expected: allow from ${MAMORI_FW_WG_CIDR} (ufw) or rich-rule source accept (firewalld)"
+    fi
+    # Clarify optionals covered by WG when not opened publicly
+    if [[ "${MAMORI_FW_DB_PROXIES}" == "1" && "${MAMORI_FW_DB_PUBLIC}" != "1" ]]; then
+        info "DB proxy ports not required publicly (WireGuard CIDR covers them; db_public=0)"
+    fi
+    if [[ "${MAMORI_FW_RDP}" == "1" && "${MAMORI_FW_RDP_PUBLIC}" != "1" ]]; then
+        info "RDP/4822 not required publicly (WireGuard CIDR covers it; rdp_public=0)"
+    fi
+    if [[ "${MAMORI_FW_WEB_PROXY}" == "1" && "${MAMORI_FW_WEB_PUBLIC}" != "1" ]]; then
+        info "WEB/8089 not required publicly (WireGuard CIDR covers it; web_public=0)"
     fi
 fi
 echo ""

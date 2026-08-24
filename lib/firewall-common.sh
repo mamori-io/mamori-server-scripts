@@ -67,6 +67,7 @@ EOF
 }
 
 # Print all port rules for the current profile (proto/port/comment), one per line.
+# Used by setup apply — opens optional ports when the feature enable flag is 1.
 mamori_fw_expected_port_rules() {
     mamori_fw_always_rules
     if [[ "${MAMORI_FW_DB_PROXIES}" == "1" ]]; then
@@ -76,6 +77,36 @@ mamori_fw_expected_port_rules() {
         mamori_fw_rdp_rules
     fi
     if [[ "${MAMORI_FW_WEB_PROXY}" == "1" ]]; then
+        mamori_fw_web_proxy_rules
+    fi
+    if [[ "${MAMORI_FW_WIREGUARD}" == "1" ]]; then
+        mamori_fw_wireguard_port_rules
+    fi
+}
+
+# True if an optional any-source port group must be present for validate.
+# With WireGuard enabled, clients already reach these ports via the CIDR allow,
+# so per-port public rules are only required when *_PUBLIC=1.
+mamori_fw_validate_requires_any_source() {
+    local enabled="$1"
+    local public="$2"
+    [[ "$enabled" == "1" ]] || return 1
+    if [[ "${MAMORI_FW_WIREGUARD}" == "1" && "$public" != "1" ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Port rules validate should require (subset of apply rules when WG covers optionals).
+mamori_fw_expected_validate_port_rules() {
+    mamori_fw_always_rules
+    if mamori_fw_validate_requires_any_source "${MAMORI_FW_DB_PROXIES}" "${MAMORI_FW_DB_PUBLIC}"; then
+        mamori_fw_db_proxy_rules
+    fi
+    if mamori_fw_validate_requires_any_source "${MAMORI_FW_RDP}" "${MAMORI_FW_RDP_PUBLIC}"; then
+        mamori_fw_rdp_rules
+    fi
+    if mamori_fw_validate_requires_any_source "${MAMORI_FW_WEB_PROXY}" "${MAMORI_FW_WEB_PUBLIC}"; then
         mamori_fw_web_proxy_rules
     fi
     if [[ "${MAMORI_FW_WIREGUARD}" == "1" ]]; then
