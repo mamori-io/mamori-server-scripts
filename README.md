@@ -45,14 +45,14 @@ bash setup-firewall.sh
 bash validate-firewall.sh
 ```
 
-`setup-firewall.sh` always opens TCP 22 and 443, and prompts for WireGuard (CIDR), DB proxies, RDP, and WEB proxy. Profile is saved in `.mamori-firewall.env`.
+`setup-firewall.sh` always opens TCP 22 and 443, and prompts for WireGuard (CIDR), internet exposure, DB proxies, RDP, and WEB proxy. Profile is saved in `.mamori-firewall.env`.
 
-With WireGuard enabled, clients on the WG CIDR may reach all host ports (including DB proxies) without opening those ports publicly. Opening DB proxy ports asks whether the host is internet-exposed; non-interactive `--db-proxies --internet-exposed` requires `--db-public`.
+With WireGuard enabled, clients on the WG CIDR may reach all host ports (DB, RDP 4822, WEB 8089) without opening those ports publicly. Opening any of those to any source on an internet-exposed host requires `--db-public` / `--rdp-public` / `--web-public`.
 
 ```bash
 # Recommended for remote clients: WireGuard only
-bash setup-firewall.sh --wireguard --wg-cidr 172.0.0.0/16 --web-proxy --no-prompt
+bash setup-firewall.sh --wireguard --wg-cidr 172.0.0.0/16 --no-prompt
 
-# Private LAN: open DB ports
-bash setup-firewall.sh --db-proxies --no-prompt
+# Private LAN: open optional ports
+bash setup-firewall.sh --db-proxies --rdp --web-proxy --no-prompt
 ```

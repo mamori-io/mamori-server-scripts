@@ -5,10 +5,12 @@
 #   MAMORI_FW_WIREGUARD=0|1
 #   MAMORI_FW_WG_CIDR=172.0.0.0/16
 #   MAMORI_FW_DB_PROXIES=0|1   # open DB/SSH proxy ports to any source
+#   MAMORI_FW_RDP=0|1          # open guacd 4822 to any source
+#   MAMORI_FW_WEB_PROXY=0|1    # open HTTP/S proxy 8089 to any source
 #   MAMORI_FW_INTERNET_EXPOSED=0|1
-#   MAMORI_FW_DB_PUBLIC=0|1    # operator confirmed public DB exposure
-#   MAMORI_FW_RDP=0|1
-#   MAMORI_FW_WEB_PROXY=0|1
+#   MAMORI_FW_DB_PUBLIC=0|1    # confirmed public DB exposure
+#   MAMORI_FW_RDP_PUBLIC=0|1   # confirmed public RDP exposure
+#   MAMORI_FW_WEB_PUBLIC=0|1   # confirmed public WEB proxy exposure
 #   MAMORI_FW_BACKEND=ufw|firewalld
 
 _FW_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +23,9 @@ MAMORI_FW_DB_PROXIES="${MAMORI_FW_DB_PROXIES:-0}"
 MAMORI_FW_INTERNET_EXPOSED="${MAMORI_FW_INTERNET_EXPOSED:-0}"
 MAMORI_FW_DB_PUBLIC="${MAMORI_FW_DB_PUBLIC:-0}"
 MAMORI_FW_RDP="${MAMORI_FW_RDP:-0}"
+MAMORI_FW_RDP_PUBLIC="${MAMORI_FW_RDP_PUBLIC:-0}"
 MAMORI_FW_WEB_PROXY="${MAMORI_FW_WEB_PROXY:-0}"
+MAMORI_FW_WEB_PUBLIC="${MAMORI_FW_WEB_PUBLIC:-0}"
 MAMORI_FW_BACKEND="${MAMORI_FW_BACKEND:-}"
 
 # Always-open management ports (proto|port|comment)
@@ -139,29 +143,78 @@ MAMORI_FW_DB_PROXIES=${MAMORI_FW_DB_PROXIES}
 MAMORI_FW_INTERNET_EXPOSED=${MAMORI_FW_INTERNET_EXPOSED}
 MAMORI_FW_DB_PUBLIC=${MAMORI_FW_DB_PUBLIC}
 MAMORI_FW_RDP=${MAMORI_FW_RDP}
+MAMORI_FW_RDP_PUBLIC=${MAMORI_FW_RDP_PUBLIC}
 MAMORI_FW_WEB_PROXY=${MAMORI_FW_WEB_PROXY}
+MAMORI_FW_WEB_PUBLIC=${MAMORI_FW_WEB_PUBLIC}
 EOF
     chmod 600 "$MAMORI_FIREWALL_ENV_FILE" 2>/dev/null || true
     echo "Wrote $MAMORI_FIREWALL_ENV_FILE"
 }
 
-# Refuse opening DB ports to any source on an internet-exposed host unless
-# MAMORI_FW_DB_PUBLIC=1. Returns 0 if OK to proceed, 1 if should refuse.
-mamori_fw_check_db_public_policy() {
-    if [[ "${MAMORI_FW_DB_PROXIES}" != "1" ]]; then
-        return 0
-    fi
+# Refuse opening optional service ports to any source on an internet-exposed
+# host unless the matching *_PUBLIC flag is set. Returns 0 if OK, 1 if refuse.
+mamori_fw_check_public_ports_policy() {
+    local ok=0
     if [[ "${MAMORI_FW_INTERNET_EXPOSED}" != "1" ]]; then
         return 0
     fi
-    if [[ "${MAMORI_FW_DB_PUBLIC}" == "1" ]]; then
-        return 0
+    if [[ "${MAMORI_FW_DB_PROXIES}" == "1" && "${MAMORI_FW_DB_PUBLIC}" != "1" ]]; then
+        echo "ERROR: --db-proxies on an internet-exposed host opens DB/SSH proxy" >&2
+        echo "       ports to any source. Prefer WireGuard. To open anyway, pass --db-public." >&2
+        ok=1
     fi
-    echo "ERROR: --db-proxies with an internet-exposed host opens DB/SSH proxy" >&2
-    echo "       ports to any source. Prefer WireGuard: clients on the WG CIDR" >&2
-    echo "       already reach those ports without per-port public rules." >&2
-    echo "       To open DB ports publicly anyway, also pass --db-public." >&2
-    return 1
+    if [[ "${MAMORI_FW_RDP}" == "1" && "${MAMORI_FW_RDP_PUBLIC}" != "1" ]]; then
+        echo "ERROR: --rdp on an internet-exposed host opens TCP 4822 to any source." >&2
+        echo "       Prefer WireGuard. To open anyway, pass --rdp-public." >&2
+        ok=1
+    fi
+    if [[ "${MAMORI_FW_WEB_PROXY}" == "1" && "${MAMORI_FW_WEB_PUBLIC}" != "1" ]]; then
+        echo "ERROR: --web-proxy on an internet-exposed host opens TCP 8089 to any source." >&2
+        echo "       Prefer WireGuard. To open anyway, pass --web-public." >&2
+        ok=1
+    fi
+    if [[ "$ok" -ne 0 ]]; then
+        echo "       WireGuard clients on the WG CIDR already reach these ports" >&2
+        echo "       without per-port public rules." >&2
+        return 1
+    fi
+    return 0
+}
+
+# Prompt for an optional any-source port group.
+# $1 label  $2 varname for enable (e.g. MAMORI_FW_RDP)  $3 varname for public flag
+mamori_fw_prompt_any_source_ports() {
+    local label="$1"
+    local enable_var="$2"
+    local public_var="$3"
+    local want
+
+    printf -v "$enable_var" '%s' "0"
+    printf -v "$public_var" '%s' "0"
+
+    if [[ "${MAMORI_FW_INTERNET_EXPOSED}" == "1" ]]; then
+        echo ""
+        echo "WARNING: Opening ${label} on an internet-facing host exposes it to"
+        echo "         any source. Prefer WireGuard (or a private network)."
+        if [[ "$MAMORI_FW_WIREGUARD" == "1" ]]; then
+            echo "         WireGuard clients on ${MAMORI_FW_WG_CIDR} already reach"
+            echo "         these ports via the client-network allow."
+        fi
+        mamori_fw_yn "Open ${label} to any source anyway?" N
+        want="$REPLY"
+        if [[ "$want" == "1" ]]; then
+            printf -v "$enable_var" '%s' "1"
+            printf -v "$public_var" '%s' "1"
+        else
+            echo "Skipping public ${label} rules."
+        fi
+    else
+        mamori_fw_yn "Open ${label} to any source?" N
+        want="$REPLY"
+        if [[ "$want" == "1" ]]; then
+            printf -v "$enable_var" '%s' "1"
+        fi
+    fi
 }
 
 mamori_fw_yn() {
@@ -190,7 +243,7 @@ mamori_fw_yn() {
 }
 
 mamori_fw_prompt_profile() {
-    local answer want_db
+    local answer
     echo ""
     echo "Configure which Mamori features are exposed on the host firewall."
     echo "Always opened: TCP 22 (SSH), TCP 443 (HTTPS)."
@@ -205,50 +258,32 @@ mamori_fw_prompt_profile() {
         fi
         echo ""
         echo "Note: WireGuard clients on ${MAMORI_FW_WG_CIDR} are allowed to all"
-        echo "      host ports (including DB proxies). You do not need to open"
-        echo "      DB proxy ports publicly for WireGuard users."
+        echo "      host ports (DB proxies, RDP/guacd 4822, WEB proxy 8089, …)."
+        echo "      You do not need to open those ports publicly for WireGuard users."
         echo ""
     fi
 
+    mamori_fw_yn "Is this Mamori server exposed to the internet (public IP / NAT)?" N
+    MAMORI_FW_INTERNET_EXPOSED="$REPLY"
+
     MAMORI_FW_DB_PROXIES=0
-    MAMORI_FW_INTERNET_EXPOSED=0
     MAMORI_FW_DB_PUBLIC=0
+    MAMORI_FW_RDP=0
+    MAMORI_FW_RDP_PUBLIC=0
+    MAMORI_FW_WEB_PROXY=0
+    MAMORI_FW_WEB_PUBLIC=0
 
-    mamori_fw_yn "Open DB proxy ports to any source (SSH/Postgres/MSSQL/MySQL/Oracle/Mongo/JDBC)?" N
-    want_db="$REPLY"
-    if [[ "$want_db" == "1" ]]; then
-        mamori_fw_yn "Is this Mamori server exposed to the internet (public IP / NAT of DB ports)?" N
-        MAMORI_FW_INTERNET_EXPOSED="$REPLY"
-        if [[ "$MAMORI_FW_INTERNET_EXPOSED" == "1" ]]; then
-            echo ""
-            echo "WARNING: Opening DB/SSH proxy ports on an internet-facing host"
-            echo "         exposes them to any source. Prefer WireGuard (or a"
-            echo "         private network) instead of public DB port rules."
-            if [[ "$MAMORI_FW_WIREGUARD" == "1" ]]; then
-                echo "         WireGuard clients on ${MAMORI_FW_WG_CIDR} already"
-                echo "         reach those ports via the client-network allow."
-            fi
-            echo ""
-            mamori_fw_yn "Open DB proxy ports to any source anyway?" N
-            if [[ "$REPLY" == "1" ]]; then
-                MAMORI_FW_DB_PROXIES=1
-                MAMORI_FW_DB_PUBLIC=1
-            else
-                MAMORI_FW_DB_PROXIES=0
-                MAMORI_FW_DB_PUBLIC=0
-                echo "Skipping public DB proxy port rules."
-            fi
-        else
-            MAMORI_FW_DB_PROXIES=1
-            MAMORI_FW_DB_PUBLIC=0
-        fi
-    fi
+    mamori_fw_prompt_any_source_ports \
+        "DB proxy ports (SSH/Postgres/MSSQL/MySQL/Oracle/Mongo/JDBC)" \
+        MAMORI_FW_DB_PROXIES MAMORI_FW_DB_PUBLIC
 
-    mamori_fw_yn "Enable RDP (guacd TCP 4822)?" N
-    MAMORI_FW_RDP="$REPLY"
+    mamori_fw_prompt_any_source_ports \
+        "RDP (guacd TCP 4822)" \
+        MAMORI_FW_RDP MAMORI_FW_RDP_PUBLIC
 
-    mamori_fw_yn "Enable WEB HTTP/S proxy (TCP 8089)?" N
-    MAMORI_FW_WEB_PROXY="$REPLY"
+    mamori_fw_prompt_any_source_ports \
+        "WEB HTTP/S proxy (TCP 8089)" \
+        MAMORI_FW_WEB_PROXY MAMORI_FW_WEB_PUBLIC
 }
 
 mamori_fw_print_profile() {
@@ -257,8 +292,8 @@ mamori_fw_print_profile() {
     echo "  wireguard:         ${MAMORI_FW_WIREGUARD}  cidr=${MAMORI_FW_WG_CIDR}"
     echo "  internet_exposed:  ${MAMORI_FW_INTERNET_EXPOSED}"
     echo "  db_proxies:        ${MAMORI_FW_DB_PROXIES}  (public=${MAMORI_FW_DB_PUBLIC})"
-    echo "  rdp:               ${MAMORI_FW_RDP}"
-    echo "  web_proxy:         ${MAMORI_FW_WEB_PROXY}"
+    echo "  rdp:               ${MAMORI_FW_RDP}  (public=${MAMORI_FW_RDP_PUBLIC})"
+    echo "  web_proxy:         ${MAMORI_FW_WEB_PROXY}  (public=${MAMORI_FW_WEB_PUBLIC})"
     echo "  ports:"
     while IFS='|' read -r proto port comment; do
         echo "    ${proto^^}/$port  $comment"
