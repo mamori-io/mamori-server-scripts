@@ -110,11 +110,34 @@ PRIVILEGED="$($DOCKER inspect -f '{{.HostConfig.Privileged}}' "$CONTAINER_NAME")
 RESTART="$($DOCKER inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_NAME")"
 RESTART_RETRIES="$($DOCKER inspect -f '{{.HostConfig.RestartPolicy.MaximumRetryCount}}' "$CONTAINER_NAME")"
 
-# Cmd as words (typically /sbin/my_init)
+# Cmd as words (typically /sbin/my_init).
+# println leaves a trailing blank line; mapfile would keep "" and docker create
+# would set Cmd=["/sbin/my_init",""], which crashes my_init:
+#   ValueError: argv first element cannot be empty
 mapfile -t CMD_ARR < <($DOCKER inspect -f '{{range .Config.Cmd}}{{println .}}{{end}}' "$CONTAINER_NAME")
+# Drop empty words from trailing newlines
+_tmp_cmd=()
+for _c in "${CMD_ARR[@]}"; do
+    [[ -n "$_c" ]] && _tmp_cmd+=("$_c")
+done
+CMD_ARR=("${_tmp_cmd[@]}")
+unset _tmp_cmd _c
 if [[ ${#CMD_ARR[@]} -eq 0 ]]; then
     CMD_ARR=(/sbin/my_init)
 fi
+# #region agent log
+if [[ -n "${MAMORI_DEBUG_LOG:-}" ]]; then
+    _cmd_json="["
+    _first=1
+    for _c in "${CMD_ARR[@]}"; do
+        [[ $_first -eq 1 ]] && _first=0 || _cmd_json+=","
+        _cmd_json+="\"${_c//\"/\\\"}\""
+    done
+    _cmd_json+="]"
+    printf '%s\n' "{\"sessionId\":\"57422e\",\"hypothesisId\":\"A\",\"location\":\"scrub-mamori-root-password-env.sh:cmd\",\"message\":\"scrub cmd after filter\",\"data\":{\"cmd\":${_cmd_json}},\"timestamp\":$(($(date +%s)*1000))}" >>"$MAMORI_DEBUG_LOG" || true
+    unset _cmd_json _first _c
+fi
+# #endregion
 
 CREATE_ARGS=(--name "$CONTAINER_NAME")
 [[ "$NETWORK" == "host" ]] && CREATE_ARGS+=(--network host)
