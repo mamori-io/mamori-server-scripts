@@ -329,7 +329,7 @@ if [[ "$FAILS" -eq 0 ]]; then
     echo "===================================================="
     echo ""
     if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
-        echo "Next: bash install-dockehub.sh   # or install-file.sh / install-redhar-dockerhub.sh"
+        echo "Next: bash install-dockehub.sh   # or install-file.sh / install-redhat-dockerhub.sh"
     else
         echo "Next: run an install/upgrade script (existing portal root password will be reused)."
     fi

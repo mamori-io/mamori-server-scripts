@@ -133,19 +133,24 @@ LOG_MAX_FILE="$($DOCKER inspect -f '{{index .HostConfig.LogConfig.Config "max-fi
 [[ -n "$LOG_MAX_SIZE" && "$LOG_MAX_SIZE" != "<no value>" ]] && CREATE_ARGS+=(--log-opt "max-size=${LOG_MAX_SIZE}")
 [[ -n "$LOG_MAX_FILE" && "$LOG_MAX_FILE" != "<no value>" ]] && CREATE_ARGS+=(--log-opt "max-file=${LOG_MAX_FILE}")
 
-# Mounts
-while IFS=$'\t' read -r mtype mname msrc mdest mmode; do
-    [[ -z "${mdest:-}" ]] && continue
+# Mounts — use ASCII RS (0x1e) separators and never-empty placeholders.
+# Bash 5.3+ collapses consecutive IFS tab delimiters, which breaks bind mounts
+# that have an empty .Name (e.g. /proc:/host/proc:ro → invalid /host/proc:ro).
+while IFS=$'\x1e' read -r mtype mname msrc mdest mmode; do
+    [[ -z "${mdest:-}" || "$mdest" == "-" ]] && continue
+    [[ "$mname" == "-" ]] && mname=""
+    [[ "$msrc" == "-" ]] && msrc=""
+    [[ "$mmode" == "-" ]] && mmode=""
     if [[ "$mtype" == "volume" && -n "$mname" ]]; then
         CREATE_ARGS+=(-v "${mname}:${mdest}")
     elif [[ "$mtype" == "bind" && -n "$msrc" ]]; then
-        if [[ -n "$mmode" && "$mmode" != "<no value>" ]]; then
+        if [[ -n "$mmode" ]]; then
             CREATE_ARGS+=(-v "${msrc}:${mdest}:${mmode}")
         else
             CREATE_ARGS+=(-v "${msrc}:${mdest}")
         fi
     fi
-done < <($DOCKER inspect -f '{{range .Mounts}}{{.Type}}{{"\t"}}{{.Name}}{{"\t"}}{{.Source}}{{"\t"}}{{.Destination}}{{"\t"}}{{.Mode}}{{"\n"}}{{end}}' "$CONTAINER_NAME")
+done < <($DOCKER inspect -f '{{range .Mounts}}{{.Type}}{{"\x1e"}}{{if .Name}}{{.Name}}{{else}}-{{end}}{{"\x1e"}}{{if .Source}}{{.Source}}{{else}}-{{end}}{{"\x1e"}}{{.Destination}}{{"\x1e"}}{{if .Mode}}{{.Mode}}{{else}}-{{end}}{{"\n"}}{{end}}' "$CONTAINER_NAME")
 
 # Env except MAMORI_ROOT_PASSWORD
 while IFS= read -r line; do
