@@ -62,7 +62,17 @@ $DOCKER rm -f mamori mamori-wireguard 2>/dev/null || true
 echo "Removing images (if present)..."
 $DOCKER rmi iomamori/mamori-all-in-one:latest 2>/dev/null || true
 $DOCKER rmi iomamori/mamori-all-in-one 2>/dev/null || true
+$DOCKER rmi mamori-all-in-one:latest 2>/dev/null || true
+$DOCKER rmi mamori-all-in-one 2>/dev/null || true
 $DOCKER rmi mamori-wireguard mamori-alpine-boringtun 2>/dev/null || true
+$DOCKER rmi mamori-old 2>/dev/null || true
+
+# Leftover upgrade image tags (mamori-<timestamp>)
+while IFS= read -r id; do
+  [[ -z "$id" ]] && continue
+  echo "  Removing leftover image: $id"
+  $DOCKER image rm -f "$id" 2>/dev/null || true
+done < <($DOCKER images -f 'reference=mamori-[0-9]*' -q 2>/dev/null || true)
 
 if [[ "$KEEP_VOLUMES" -eq 1 ]]; then
   echo "Done (--keep-volumes: Docker volumes were not removed)."

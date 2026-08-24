@@ -6,7 +6,7 @@ Scripts for operating and installing a Mamori server.
 
 | Path | Purpose |
 |------|---------|
-| `media/` | All-in-one install / upgrade / uninstall |
+| `media/` | All-in-one install / upgrade / cleanup / uninstall |
 | `firewall/` | Host firewall setup (ufw / firewalld) and validation |
 | `ha/` | High-availability Postgres, app nodes, and load balancer |
 | `lib/` | Shared helpers (portal root password, timezone/swap, firewall) |
@@ -34,6 +34,24 @@ bash validate-install.sh
 ```
 
 Do not leave `MAMORI_ROOT_PASSWORD` on a long-lived `docker create -e` definition.
+
+## Upgrade cleanup and uninstall
+
+After a verified upgrade, remove leftover backup containers/images:
+
+```bash
+cd media
+bash cleanup.sh
+```
+
+Full uninstall (containers, images, and volumes — prompts before deleting volumes):
+
+```bash
+cd media
+bash uninstall.sh
+# bash uninstall.sh --keep-volumes   # keep mamori-* volumes
+# bash uninstall.sh --yes            # skip volume confirmation
+```
 
 ## Host firewall
 
