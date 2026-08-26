@@ -4,7 +4,8 @@
 #
 # Installs Mamori all-in-one on Red Hat–style hosts using Podman: enables the podman socket, pulls the image,
 # creates the container with host networking and data volumes, and starts it.
-# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required, then scrubs that env from the container.
+# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required (prompts, or uses
+# an already-exported value), then scrubs that env from the container.
 
 set -euo pipefail
 

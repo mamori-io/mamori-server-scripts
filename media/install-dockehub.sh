@@ -4,7 +4,8 @@
 #
 # Initial install of Mamori all-in-one by pulling iomamori/mamori-all-in-one:latest from Docker Hub, then
 # creating and starting the mamori container with standard volume mounts.
-# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required, then scrubs that env from the container.
+# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required (prompts, or uses
+# an already-exported value), then scrubs that env from the container.
 
 set -euo pipefail
 

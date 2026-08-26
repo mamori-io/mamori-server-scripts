@@ -4,7 +4,7 @@
 #
 # After first boot has stored derby.user.root, recreate the container without
 # MAMORI_ROOT_PASSWORD so the secret is not left on the container config
-# (docker inspect). Also deletes the host .mamori-root-password.env file.
+# (docker inspect). Also removes a legacy host .mamori-root-password.env if present.
 #
 # Usage: scrub-mamori-root-password-env.sh [--name mamori] [--wait-seconds 180]
 
@@ -15,6 +15,7 @@ CONTAINER_NAME="${CONTAINER_NAME:-mamori}"
 MAMORI_VAR_VOLUME="${MAMORI_VAR_VOLUME:-mamori-var}"
 WAIT_SECONDS="${WAIT_SECONDS:-180}"
 
+# Legacy path from older scripts that wrote a host env file (best-effort cleanup).
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _REPO_ROOT="$(cd "$_SCRIPT_DIR/.." && pwd)"
 MAMORI_ROOT_PASSWORD_ENV_FILE="${MAMORI_ROOT_PASSWORD_ENV_FILE:-$_REPO_ROOT/.mamori-root-password.env}"
@@ -192,4 +193,3 @@ rm -f "$MAMORI_ROOT_PASSWORD_ENV_FILE"
 unset MAMORI_ROOT_PASSWORD 2>/dev/null || true
 
 echo "Recreated and started '$CONTAINER_NAME' without MAMORI_ROOT_PASSWORD."
-echo "Removed $MAMORI_ROOT_PASSWORD_ENV_FILE if it existed."

@@ -71,29 +71,23 @@ PGPASSWORD='choose-a-strong-password' psql --host <pg-host> --port 5432 -U postg
 
 ## First app node (prime the DB)
 
-On node1, prepare a join env file (example):
-
-```bash
-cat >/tmp/cluster-details.env <<'EOF'
-PG_HOST=<pg-host>
-PG_PORT=5432
-PG_USER=postgres
-PG_PASSWORD=choose-a-strong-password
-# MAMORI_ENCRYPTION_KEY=...   # set when joining an existing cluster
-EOF
-```
+No hand-written env file. `install-ha-node.sh` without `--env-file` prompts for
+Postgres (`PG_*`) and the portal root password, checks that `mamorisys` is
+unprimed, and writes `/tmp/cluster-details.env` for join.
 
 ```bash
 bash validate-new-node.sh
 bash get-ha-media.sh --dir /tmp
 bash install-ha-node.sh --media /tmp/mamori_cluster_docker.tgz
+# prompts PG_* + portal root; writes /tmp/cluster-details.env
 bash join-ha-node.sh --env-file /tmp/cluster-details.env
 bash start-ha-node.sh
 ```
 
-`validate-new-node.sh` / `install-ha-node.sh` prompt for the portal **root**
-password when `mamori-var` is fresh (`MAMORI_ROOT_PASSWORD`). First boot stores
-it encrypted; `start-ha-node.sh` then removes that env from the container.
+First boot stores the portal root encrypted and primes shared schema;
+`start-ha-node.sh` then removes `MAMORI_ROOT_PASSWORD` from the container.
+Additional nodes use `--env-file` from `extract-cluster-details.sh` (includes
+`DERBY_USER_ROOT`) and never prompt.
 
 First boot creates schema/objects in the shared databases. Watch progress:
 
@@ -154,7 +148,7 @@ On node1:
 
 ```bash
 docker exec -it mamori msql "call SET_SERVER_PROPERTY('mqtt_server', 'tcp://<shared-services-host>:1883')"
-docker exec -it mamori msql "sv restart mamori_fqod"
+docker exec -it mamori sv restart mamori_fqod
 ```
 
 ---
@@ -165,7 +159,7 @@ Configure nginx (HTTPS → app upstream) and HAProxy (proxies → app backends) 
 
 ```bash
 docker exec -it mamori msql "call SET_SERVER_PROPERTY('haproxy', 'true')"
-docker exec -it mamori msql "sv restart mamori_fqod"
+docker exec -it mamori sv restart mamori_fqod
 ```
 
 Use `dump-lb-config.sh` / `manage-lb-node.sh` once nginx and HAProxy configs exist on the gateway.
@@ -187,7 +181,7 @@ Copy `cluster-details.env` to the new node.
 Requires `server-port-check.sh` available as `../server/server-port-check.sh` (or copy it alongside).
 
 ```bash
-bash validate-new-node.sh
+bash validate-new-node.sh --env-file /tmp/cluster-details.env
 ```
 
 ### 3. Download HA media (new node)
@@ -198,13 +192,15 @@ bash get-ha-media.sh --dir /tmp
 
 ### 4. Create the container (new node)
 
-Do not start yet.
+Do not start yet. Pass `--env-file` so install never prompts (additional node).
 
 ```bash
-bash install-ha-node.sh --media /tmp/mamori_cluster_docker.tgz
+bash install-ha-node.sh --env-file /tmp/cluster-details.env --media /tmp/mamori_cluster_docker.tgz
 ```
 
 ### 5. Join the cluster (new node)
+
+Applies Postgres settings and `DERBY_USER_ROOT` from `cluster-details.env`.
 
 ```bash
 bash join-ha-node.sh --env-file /tmp/cluster-details.env

@@ -22,12 +22,15 @@ usage() {
 Usage: join-ha-node.sh --env-file <cluster-details.env> [options]
 
 Configure the created (not yet started) mamori container to use the shared
-cluster database, using an env file from extract-cluster-details.sh.
+cluster database, using an env file from install-ha-node.sh (first node) or
+extract-cluster-details.sh (additional nodes).
 
 Required env file keys:
   PG_HOST, PG_PORT, PG_USER, PG_PASSWORD
-Recommended:
+Recommended (additional nodes):
   MAMORI_ENCRYPTION_KEY
+  DERBY_USER_ROOT         Encrypted portal root from extract-cluster-details
+                          (so first-boot does not need MAMORI_ROOT_PASSWORD)
 
 Options:
   -e, --env-file <file>   Path to cluster-details.env (required)
@@ -111,6 +114,11 @@ if [[ -z "${MAMORI_ENCRYPTION_KEY:-}" ]]; then
     echo "WARNING: MAMORI_ENCRYPTION_KEY is not set — node may not share encryption with the cluster" >&2
 fi
 
+if [[ -z "${DERBY_USER_ROOT:-}" || "${DERBY_USER_ROOT}" == "REPLACEME" ]]; then
+    echo "WARNING: DERBY_USER_ROOT is not set — additional nodes need it from extract-cluster-details.sh" >&2
+    echo "         (or start will require MAMORI_ROOT_PASSWORD on first boot)." >&2
+fi
+
 if ! $DOCKER inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     echo "ERROR: container '$CONTAINER_NAME' not found. Run install-ha-node.sh first." >&2
     exit 1
@@ -146,6 +154,28 @@ fi
 JOIN_ARGS+=("$IMAGE_NAME" /opt/mamori/mamori/bin/join_cluster.sh)
 
 $DOCKER "${JOIN_ARGS[@]}"
+
+# Apply encrypted portal root from the first node so additional nodes do not
+# need MAMORI_ROOT_PASSWORD on first start.
+if [[ -n "${DERBY_USER_ROOT:-}" && "${DERBY_USER_ROOT}" != "REPLACEME" ]]; then
+    echo "Applying derby.user.root from cluster-details onto mamori-var ..."
+    $DOCKER run --rm --volumes-from "$CONTAINER_NAME" \
+        -e "DERBY_USER_ROOT=${DERBY_USER_ROOT}" \
+        "$IMAGE_NAME" \
+        /bin/bash -c '
+set -euo pipefail
+PROPS=/opt/mamori/var/derby.properties
+if [[ ! -f "$PROPS" ]]; then
+    echo "ERROR: $PROPS not found after join" >&2
+    exit 1
+fi
+if grep -q "^derby\.user\.root=" "$PROPS" 2>/dev/null; then
+    sed -i "s|^derby\.user\.root=.*$|derby.user.root=${DERBY_USER_ROOT}|g" "$PROPS"
+else
+    echo "derby.user.root=${DERBY_USER_ROOT}" >> "$PROPS"
+fi
+'
+fi
 
 echo ""
 echo "Join configuration applied to volumes for '$CONTAINER_NAME'."

@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORT_FILE=""
 FAILS=0
 WARNS=0
+ENV_FILE=""
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -40,16 +41,17 @@ Checks:
   - Hostname resolution (getent hosts)
   - Timezone (/etc/timezone set and matches timedatectl)
   - Swap (optional warning if missing — some providers disallow it)
-  - Portal root password (MAMORI_ROOT_PASSWORD) when mamori-var needs bootstrap
+  - Role: without --env-file, first node (install prompts for PG_* + portal root);
+    with --env-file, additional node (install never prompts)
 
 Options:
-  -o, --output <file>   Also write the full report to this file
-  -h, --help            Show this help
+  -o, --output <file>     Also write the full report to this file
+  -e, --env-file <path>   Additional-node cluster-details.env (no install prompts)
+  -h, --help              Show this help
 
 Environment:
-  PORT_CHECK_SCRIPT     Override path to server-port-check.sh
-  DOCKER                Docker CLI (default: docker)
-  MAMORI_ROOT_PASSWORD  Portal root password for first boot (prompted if required)
+  PORT_CHECK_SCRIPT       Override path to server-port-check.sh
+  DOCKER                  Docker CLI (default: docker)
 EOF
 }
 
@@ -59,6 +61,11 @@ while [[ $# -gt 0 ]]; do
             shift
             REPORT_FILE="${1:-}"
             [[ -n "$REPORT_FILE" ]] || { echo "Missing value for --output" >&2; exit 1; }
+            ;;
+        -e|--env-file)
+            shift
+            ENV_FILE="${1:-}"
+            [[ -n "$ENV_FILE" ]] || { echo "Missing value for --env-file" >&2; exit 1; }
             ;;
         -h|--help)
             usage
@@ -288,19 +295,18 @@ else
 fi
 echo ""
 
-# ---------- portal root password (bootstrap) ----------
-echo "--- Portal root password ---"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
-export DOCKER="${DOCKER:-docker}"
-if ensure_mamori_root_password; then
-    if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
-        pass "MAMORI_ROOT_PASSWORD ready for first-boot bootstrap"
+# ---------- first vs additional node ----------
+echo "--- Install role ---"
+if [[ -n "$ENV_FILE" ]]; then
+    if [[ ! -f "$ENV_FILE" ]]; then
+        fail "Env file not found: $ENV_FILE"
     else
-        pass "Portal root password already configured on mamori-var (bootstrap not required)"
+        pass "Additional node (--env-file present): install will not prompt"
+        info "File: $ENV_FILE (join applies DERBY_USER_ROOT when set)"
     fi
 else
-    fail "Could not ensure MAMORI_ROOT_PASSWORD (required for fresh mamori-var)"
+    pass "First node (no --env-file): install will prompt for Postgres and portal root"
+    info "install-ha-node.sh writes /tmp/cluster-details.env for join-ha-node.sh"
 fi
 echo ""
 

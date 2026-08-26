@@ -3,7 +3,8 @@
 # Mamori LLC copyright 2026.
 #
 # Pre-flight validation for a standard (all-in-one) Mamori install.
-# Checks ports, disk, Docker, hostname, timezone, swap, and portal root password.
+# Checks ports, disk, Docker, hostname, timezone, swap, and whether portal root
+# bootstrap will be required at install (does not collect the password).
 # Works on Ubuntu and Red Hat–style hosts.
 
 set -euo pipefail
@@ -44,7 +45,7 @@ Checks:
   - Hostname resolution (getent hosts)
   - Timezone; offer to configure if missing
   - Swap (optional; offer to create 4GB /swapfile if missing)
-  - Portal root password when mamori-var needs bootstrap
+  - Whether portal root bootstrap will be required at install (does not prompt)
 
 Options:
   --list-timezones [filter]  List IANA timezones (optional substring filter) and exit
@@ -56,7 +57,6 @@ Options:
 Environment:
   DOCKER                 Docker/Podman CLI (default: docker; Red Hat: sudo podman)
   PORT_CHECK_SCRIPT      Override path to server-port-check.sh
-  MAMORI_ROOT_PASSWORD   Portal root password for first boot (prompted if required)
   HOST_SWAP_SIZE_GB      Swap size when creating (default: 4)
   HOST_SWAP_FILE         Swapfile path (default: /swapfile)
 
@@ -311,14 +311,11 @@ echo ""
 
 # ---------- portal root password ----------
 echo "--- Portal root password ---"
-if ensure_mamori_root_password; then
-    if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
-        pass "MAMORI_ROOT_PASSWORD ready for first-boot bootstrap"
-    else
-        pass "Portal root password already configured on mamori-var (bootstrap not required)"
-    fi
+report_mamori_root_password_bootstrap
+if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
+    pass "Portal root password will be prompted during install (install-*.sh)"
 else
-    fail "Could not ensure MAMORI_ROOT_PASSWORD (required for fresh mamori-var)"
+    pass "Portal root password already configured on mamori-var (bootstrap not required)"
 fi
 echo ""
 
@@ -330,6 +327,7 @@ if [[ "$FAILS" -eq 0 ]]; then
     echo ""
     if [[ "${MAMORI_ROOT_PASSWORD_REQUIRED:-0}" == "1" ]]; then
         echo "Next: bash install-dockehub.sh   # or install-file.sh / install-redhat-dockerhub.sh"
+        echo "      (install will prompt for the portal root password, or use MAMORI_ROOT_PASSWORD if exported)"
     else
         echo "Next: run an install/upgrade script (existing portal root password will be reused)."
     fi

@@ -55,8 +55,9 @@ usage() {
     cat <<'EOF'
 Usage: extract-cluster-details.sh [options]
 
-Extract Postgres, MQTT, Influx, and related HA connection details from this
-Mamori hub node into an env file.
+Extract Postgres, MQTT, Influx, encryption key, encrypted portal root
+(`DERBY_USER_ROOT`), and related HA connection details from this Mamori hub
+node into an env file.
 
 Run from the host (recommended) or inside the mamori container. On the host
 the script sets MAMORI_VAR from the mamori-var Docker volume automatically.
@@ -155,6 +156,10 @@ AUDIT_URL="$(prop_get "$DERBY_PROPS" "mamori.audit.connectionUrl" || true)"
 PG_USER="$(prop_get "$DERBY_PROPS" "mamori.rms.user" || true)"
 PG_PASSWORD="$(prop_get "$DERBY_PROPS" "mamori.rms.password" || true)"
 ENCRYPT_KEY="$(prop_get "$DERBY_PROPS" "mamori.security.encrypt.key" || true)"
+DERBY_USER_ROOT="$(prop_get "$DERBY_PROPS" "derby.user.root" || true)"
+if [[ -n "$DERBY_USER_ROOT" && "$DERBY_USER_ROOT" == "REPLACEME" ]]; then
+    DERBY_USER_ROOT=""
+fi
 
 if [[ -z "$RMS_URL" ]]; then
     echo "ERROR: mamori.rms.connectionUrl missing in $DERBY_PROPS" >&2
@@ -233,6 +238,7 @@ trap 'rm -f "$TMP"' EXIT
     emit JDBC_URL_SYS "$RMS_URL"
     emit JDBC_URL_AUDIT "$AUDIT_URL"
     emit MAMORI_ENCRYPTION_KEY "$ENCRYPT_KEY"
+    emit DERBY_USER_ROOT "$DERBY_USER_ROOT"
 
     emit MQTT_SERVER "$MQTT_SERVER"
     emit INFLUXDB_WRITE_URL "$INFLUX_WRITE_URL"

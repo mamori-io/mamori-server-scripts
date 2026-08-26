@@ -4,7 +4,8 @@
 #
 # Initial install of Mamori all-in-one from a local Docker image tarball (mamori_mon_docker.tgz), then creates
 # and starts the mamori container with standard volume mounts.
-# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required, then scrubs that env from the container.
+# Bootstraps portal root via MAMORI_ROOT_PASSWORD when required (prompts, or uses
+# an already-exported value), then scrubs that env from the container.
 
 set -euo pipefail
 

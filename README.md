@@ -21,9 +21,10 @@ stores it encrypted, then clears it from the process environment.
 
 Install helpers:
 
-- `media/validate-install.sh` — ports, disk, Docker/Podman, hostname, timezone (list/set), swap (optional add), portal root bootstrap (Ubuntu and Red Hat)
-- `media/install-*.sh` — pass the env for first create/start, then scrub it from the container
-- `ha/validate-new-node.sh` / `ha/install-ha-node.sh` / `ha/start-ha-node.sh` — same for HA
+- `media/validate-install.sh` — ports, disk, Docker/Podman, hostname, timezone (list/set), swap (optional add); reports whether install will prompt for portal root (Ubuntu and Red Hat)
+- `media/install-*.sh` — prompt for (or use exported) `MAMORI_ROOT_PASSWORD` on first create/start, then scrub it from the container
+- `ha/validate-new-node.sh` — without `--env-file` = first node (install will prompt); with `--env-file` = additional node
+- `ha/install-ha-node.sh` / `ha/start-ha-node.sh` — no `--env-file` prompts for PG_* + portal root; `--env-file` never prompts; joining nodes get `DERBY_USER_ROOT` via extract/join; scrub after first boot
 
 AIO validate examples:
 
@@ -34,6 +35,7 @@ bash validate-install.sh
 ```
 
 Do not leave `MAMORI_ROOT_PASSWORD` on a long-lived `docker create -e` definition.
+Never store it in a host env file under this repo.
 
 ## Upgrade cleanup and uninstall
 

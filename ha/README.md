@@ -45,7 +45,8 @@ Warns if `password_encryption` is not `scram-sha-256`.
 
 Run on an existing app-node **host**. Resolves `MAMORI_VAR` from the `mamori-var`
 Docker volume, reads derby properties and Postgres `rms.server_property`, and
-writes a `cluster-details.env` for joining a new node.
+writes a `cluster-details.env` for joining a new node (includes
+`DERBY_USER_ROOT`).
 
 - `-o` / `--output <file>` — output path
 - `-a` / `--all` — dump every `rms.server_property`
@@ -54,13 +55,14 @@ writes a `cluster-details.env` for joining a new node.
 
 Pre-flight checks on a **new** app node before install/join: ports, disk,
 Docker (≥26), hostname, `/etc/timezone`. Swap is warn-only.
-Also ensures `MAMORI_ROOT_PASSWORD` when `mamori-var` needs portal root
-bootstrap (prompts if required).
+Also reports install role: without `--env-file`, first node (install prompts for
+Postgres and portal root); with `--env-file`, additional node (no prompts).
 
 Uses [`server/server-port-check.sh`](../server/server-port-check.sh) (keep repo
 layout, or copy that script alongside).
 
 - `-o` / `--output <file>` — write a report file
+- `-e` / `--env-file <path>` — additional-node cluster-details.env
 
 Exit `0` only if all hard checks pass.
 
@@ -77,19 +79,28 @@ Downloads HA cluster media (`mamori_cluster_docker.tgz`).
 `docker load`s the HA image and `docker create`s the app-node container.
 Does **not** start or join. Uses HA volumes only (`mamori-var`,
 `mamori-nginx-conf`). Sets `TZ` from `/etc/timezone` when present.
-On a fresh `mamori-var`, passes `MAMORI_ROOT_PASSWORD` for first-boot bootstrap.
+
+Role is determined by `--env-file`:
+- **No `--env-file` (first node):** prompt for `PG_*` and portal root; verify
+  `mamorisys` is unprimed; write `--write-env` (default `/tmp/cluster-details.env`)
+  for join; pass `MAMORI_ROOT_PASSWORD` when needed.
+- **`--env-file` (additional):** never prompt; verify DB is primed; join applies
+  `DERBY_USER_ROOT`.
 
 - `--media <tarball>` — path to `mamori_cluster_docker.tgz`
+- `-e` / `--env-file <path>` — additional-node cluster-details.env
+- `-o` / `--write-env <path>` — first-node output env path
 - `-n` / `--name <container>` — container name (default: `mamori`)
 - `--force` — replace an existing container with the same name
 
 ### join-ha-node.sh
 
 Joins a created (not yet started) container to the shared cluster DB using
-an env file from `extract-cluster-details.sh`.
+an env file from `extract-cluster-details.sh`. Also applies `DERBY_USER_ROOT`
+when present so additional nodes do not need `MAMORI_ROOT_PASSWORD`.
 
 Requires `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD` (and ideally
-`MAMORI_ENCRYPTION_KEY`) in the env file.
+`MAMORI_ENCRYPTION_KEY` and `DERBY_USER_ROOT`) in the env file.
 
 - `--env-file <file>` — cluster details env file
 - `-n` / `--name <container>` — container name (default: `mamori`)
@@ -100,7 +111,8 @@ Run **after** `install-ha-node.sh` and **before** `start-ha-node.sh`.
 
 Starts the app-node container, then recreates it **without**
 `MAMORI_ROOT_PASSWORD` once `derby.user.root` is stored (so the secret is
-not left on the container config). Deletes `.mamori-root-password.env`.
+not left on the container config). Also removes a legacy
+`.mamori-root-password.env` if present from older script versions.
 
 - `-n` / `--name <container>` — container name (default: `mamori`)
 
