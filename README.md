@@ -6,7 +6,7 @@ Scripts for operating and installing a Mamori server.
 
 | Path | Purpose |
 |------|---------|
-| `media/` | All-in-one install / upgrade / cleanup / uninstall |
+| `media/` | All-in-one install / upgrade / cleanup / uninstall / **backup & restore** |
 | `firewall/` | Host firewall setup (ufw / firewalld) and validation |
 | `ha/` | High-availability Postgres, app nodes, and load balancer |
 | `lib/` | Shared helpers (portal root password, timezone/swap, firewall) |
@@ -54,6 +54,35 @@ bash uninstall.sh
 # bash uninstall.sh --keep-volumes   # keep mamori-* volumes
 # bash uninstall.sh --yes            # skip volume confirmation
 ```
+
+## All-in-one backup and restore
+
+Migrate an all-in-one Mamori host by backing up named Docker volumes and the
+`mamori-alpine-boringtun` helper image, then restoring them on a new host
+**before** running the Mamori install.
+
+On the **source** (Mamori running):
+
+```bash
+cd media
+bash backup-aio.sh
+# bash backup-aio.sh --output /path/to/mamori-backups
+```
+
+Copy the output directory (default `./mamori-backups`) to the **target**. The
+target needs Docker installed; do not install Mamori yet.
+
+On the **target**:
+
+```bash
+cd /path/to/mamori-backups
+bash restore.sh
+# or, from the scripts repo:
+# bash /path/to/mamori-server-scripts/media/restore-aio.sh --backup /path/to/mamori-backups
+```
+
+Then run the normal AIO install (`media/install-*.sh`) so the `mamori`
+container is created against the restored volumes.
 
 ## Host firewall
 
