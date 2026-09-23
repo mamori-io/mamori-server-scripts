@@ -11,7 +11,7 @@ Scripts for operating and installing a Mamori server.
 | `ha/` | High-availability Postgres, app nodes, and load balancer |
 | `lib/` | Shared helpers (portal root password, timezone/swap, firewall) |
 | `server/` | Host checks (ports, dumps) |
-| `nginx/` | Nginx helpers |
+| `nginx/` | Nginx helpers (config refresh, header checks, **SSL cert updates**) |
 
 ## Portal root password (`MAMORI_ROOT_PASSWORD`)
 
@@ -104,4 +104,23 @@ bash setup-firewall.sh --wireguard --wg-cidr 172.0.0.0/16 --no-prompt
 
 # Private LAN: open optional ports
 bash setup-firewall.sh --db-proxies --rdp --web-proxy --no-prompt
+```
+
+## Nginx SSL (host fallback when UX fails)
+
+When SSL is terminated **inside the mamori container** (standalone / node):
+
+```bash
+cd nginx
+sudo bash nginx-update-container-ssl.sh /path/to/fullchain.crt /path/to/privkey.key
+# sudo bash nginx-update-container-ssl.sh cert.crt key.key --reload   # reload nginx only
+```
+
+When SSL is terminated on the **HA gateway** load balancer:
+
+```bash
+cd nginx
+sudo bash nginx-update-gateway-ssl.sh /path/to/fullchain.crt /path/to/privkey.key
+# auto-detects /etc/nginx/ssl/server.{crt,key} or nginx.{crt,key}
+# sudo bash nginx-update-gateway-ssl.sh cert.crt key.key --docker nginx
 ```
