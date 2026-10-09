@@ -289,6 +289,8 @@ For an **AIO** container whose Grafana/Influx binaries live on Docker volumes, u
 
 Grafana 13 no longer ships `grafana-server`; start with `grafana server` (upgrade scripts install a shim for older entrypoints).
 
+Upgrades also replace `conf/defaults.ini` from the Grafana package and ensure `conf/custom.ini` has `[secrets_manager]` plus `[unified_alerting.state_history] backend = annotations`. Leaving a pre-13 `defaults.ini` in place causes Grafana to crash-loop (nginx `/monitor/` → 502).
+
 ---
 
 ## Manage load-balancer nodes (gateway host)

@@ -470,11 +470,110 @@ install_grafana_shim() {
   chmod +x "${home}/bin/grafana-server"
 }
 
+# Grafana 13 requires modern defaults.ini (secrets_manager, alerting sections).
+# Binary-only upgrades leave a stale defaults.ini and crash (502 via nginx).
+# Install package defaults.ini and ensure custom.ini has Mamori-critical overrides.
+ini_get_key() {
+  local file="$1" section="$2" key="$3"
+  awk -v sec="[$section]" -v key="$key" '
+    $0 == sec { insec=1; next }
+    /^\[/ { insec=0 }
+    insec && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+      sub(/^[^=]*=[[:space:]]*/, ""); print; exit
+    }
+  ' "$file" 2>/dev/null || true
+}
+
+ensure_grafana_custom_overrides() {
+  # Args: path to custom.ini, path to old defaults (for secret_key harvest)
+  local custom="$1" old_defaults="${2:-}"
+  local secret=""
+  mkdir -p "$(dirname "$custom")"
+  touch "$custom"
+
+  if [ -n "$old_defaults" ] && [ -f "$old_defaults" ]; then
+    secret=$(ini_get_key "$old_defaults" security secret_key)
+  fi
+  if [ -z "$secret" ] && [ -f "$custom" ]; then
+    secret=$(ini_get_key "$custom" security secret_key)
+  fi
+  if [ -z "$secret" ]; then
+    secret=$(ini_get_key "$custom" "secrets_manager.encryption.secret_key.v1" secret_key)
+  fi
+
+  # Append missing Grafana-13 / Mamori sections (do not rewrite whole file).
+  if ! grep -q '^\[secrets_manager\]' "$custom" 2>/dev/null; then
+    {
+      echo ""
+      echo "[secrets_manager]"
+      echo "encryption_provider = secret_key.v1"
+    } >> "$custom"
+  fi
+  if ! grep -q '^\[secrets_manager.encryption.secret_key.v1\]' "$custom" 2>/dev/null; then
+    {
+      echo ""
+      echo "[secrets_manager.encryption.secret_key.v1]"
+      if [ -n "$secret" ]; then
+        echo "secret_key = ${secret}"
+      else
+        echo "; set secret_key to match [security] secret_key"
+        echo "secret_key ="
+      fi
+    } >> "$custom"
+  fi
+  if ! grep -q '^\[unified_alerting.state_history\]' "$custom" 2>/dev/null; then
+    {
+      echo ""
+      echo "[unified_alerting.state_history]"
+      echo "backend = annotations"
+    } >> "$custom"
+  fi
+}
+
+fix_grafana_conf_host() {
+  local home="$1" src="$2"
+  local conf="${home}/conf"
+  mkdir -p "$conf"
+  if [ -f "${conf}/defaults.ini" ]; then
+    cp -a "${conf}/defaults.ini" "${conf}/defaults.ini.pre-upgrade.bak"
+  fi
+  if [ -f "${src}/conf/defaults.ini" ]; then
+    cp -a "${src}/conf/defaults.ini" "${conf}/defaults.ini"
+    cp -a "${src}/conf/defaults.ini" "${conf}/defaults.ini.upstream"
+  fi
+  ensure_grafana_custom_overrides "${conf}/custom.ini" "${conf}/defaults.ini.pre-upgrade.bak"
+}
+
+fix_grafana_conf_container() {
+  local c="$1" home="$2" src="$3"
+  local stage old
+  stage=$(mktemp -d)
+  old=$(mktemp)
+  mkdir -p "${stage}/conf"
+  if docker exec "$c" test -f "${home}/conf/defaults.ini" 2>/dev/null; then
+    docker cp "${c}:${home}/conf/defaults.ini" "$old" || true
+    docker exec "$c" cp "${home}/conf/defaults.ini" "${home}/conf/defaults.ini.pre-upgrade.bak" || true
+  fi
+  if [ -f "${src}/conf/defaults.ini" ]; then
+    docker cp "${src}/conf/defaults.ini" "${c}:${home}/conf/defaults.ini"
+    docker cp "${src}/conf/defaults.ini" "${c}:${home}/conf/defaults.ini.upstream"
+  fi
+  if docker exec "$c" test -f "${home}/conf/custom.ini" 2>/dev/null; then
+    docker cp "${c}:${home}/conf/custom.ini" "${stage}/custom.ini"
+  else
+    : > "${stage}/custom.ini"
+  fi
+  ensure_grafana_custom_overrides "${stage}/custom.ini" "$old"
+  docker cp "${stage}/custom.ini" "${c}:${home}/conf/custom.ini"
+  rm -rf "$stage" "$old"
+}
+
 fix_grafana_tree() {
   local home="$1" src="$2"
   rm -rf "${home}/bin" "${home}/public"
   cp -a "${src}/bin" "${src}/public" "${home}/"
   install_grafana_shim "$home"
+  fix_grafana_conf_host "$home" "$src"
 }
 
 fix_grafana_into_container() {
@@ -487,6 +586,7 @@ fix_grafana_into_container() {
   docker exec "$c" rm -rf "${home}/bin" "${home}/public"
   docker cp "${stage}/bin" "${c}:${home}/"
   docker cp "${stage}/public" "${c}:${home}/"
+  fix_grafana_conf_container "$c" "$home" "$src"
   # Fix runit if present
   if docker exec "$c" test -f /etc/service/grafana/run 2>/dev/null; then
     docker exec "$c" sh -c "cat > /etc/service/grafana/run <<'EOF'
