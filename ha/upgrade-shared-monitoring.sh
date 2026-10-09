@@ -448,7 +448,8 @@ assert_profile_usable() {
 
 download_grafana_extract() {
   local work="$1"
-  echo "Downloading Grafana ${GRAFANA_VERSION} ..."
+  # Status on stderr so $(...) only captures the extract path.
+  echo "Downloading Grafana ${GRAFANA_VERSION} ..." >&2
   curl -fL --retry 3 -o "${work}/grafana.tgz" "$GRAFANA_URL"
   tar xzf "${work}/grafana.tgz" -C "$work"
   echo "${work}/grafana-${GRAFANA_VERSION}"
@@ -456,7 +457,8 @@ download_grafana_extract() {
 
 download_influx_extract() {
   local work="$1"
-  echo "Downloading InfluxDB ${INFLUXDB_VERSION} ..."
+  # Status on stderr so $(...) only captures the extract path.
+  echo "Downloading InfluxDB ${INFLUXDB_VERSION} ..." >&2
   curl -fL --retry 3 -o "${work}/influx.tgz" "$INFLUXDB_URL"
   tar xzf "${work}/influx.tgz" -C "$work"
   echo "${work}/influxdb-${INFLUXDB_VERSION}"
