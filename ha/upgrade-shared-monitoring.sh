@@ -541,7 +541,7 @@ upgrade_grafana() {
         echo "Stopping ${GRAFANA_CONTAINER} ..."
         docker stop "$GRAFANA_CONTAINER" || true
       fi
-      replace_grafana_tree "$GRAFANA_HOME" "$src"
+      fix_grafana_tree "$GRAFANA_HOME" "$src"
       if [ "${GRAFANA_NEEDS_ENTRYPOINT_FIX:-0}" = "1" ] && [ -n "${GRAFANA_CONTAINER:-}" ]; then
         maybe_fix_grafana_entrypoint "$GRAFANA_CONTAINER" "$GRAFANA_HOME"
       fi
@@ -556,7 +556,7 @@ upgrade_grafana() {
       docker start "$GRAFANA_CONTAINER"
       # Wait briefly for container to accept docker exec / cp
       sleep 2
-      replace_grafana_into_container "$GRAFANA_CONTAINER" "$GRAFANA_HOME" "$src"
+      fix_grafana_into_container "$GRAFANA_CONTAINER" "$GRAFANA_HOME" "$src"
       docker restart "$GRAFANA_CONTAINER"
       sleep 2
       ver=$(grafana_version_in_container "$GRAFANA_CONTAINER" "$GRAFANA_HOME" || true)
