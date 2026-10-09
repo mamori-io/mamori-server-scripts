@@ -260,18 +260,30 @@ docker exec -it mamori msql "call SET_SERVER_PROPERTY('influxdb_write_url', 'htt
 
 Grafana UI is typically `http://<shared-services-host>:3000/monitor` (or proxied via the LB `/monitor`).
 
-To upgrade **HA shared-services** Grafana/Influx (host trees `/opt/grafana`, `/opt/influxdb` and containers `mamori-grafana` / `mamori-influx`):
+To upgrade **HA / shared-services** Grafana/Influx on the monitoring host:
 
 ```bash
 cd /path/to/mamori-server-scripts/ha
-sudo ./upgrade-shared-monitoring.sh --verify          # check layout only
-sudo ./upgrade-shared-monitoring.sh --verify grafana
-sudo ./upgrade-shared-monitoring.sh                   # upgrade both
-sudo ./upgrade-shared-monitoring.sh grafana
-sudo ./upgrade-shared-monitoring.sh influxdb
+
+# 1) Discover layout and write monitoring-upgrade.env (required before upgrade)
+sudo ./upgrade-shared-monitoring.sh --verify
+
+# 2) Upgrade using that profile
+sudo ./upgrade-shared-monitoring.sh                   # both
+# sudo ./upgrade-shared-monitoring.sh grafana
+# sudo ./upgrade-shared-monitoring.sh influxdb
+
+# Optional: explicit profile path
+# sudo ./upgrade-shared-monitoring.sh --verify --config /var/lib/mamori/monitoring-upgrade.env
+# sudo ./upgrade-shared-monitoring.sh --config /var/lib/mamori/monitoring-upgrade.env
 ```
 
-`--verify` checks directories, binaries, container existence/mounts/entrypoints, and current vs target versions; it does not download or change anything. Exit status is non-zero if the layout does not match what the upgrade expects.
+`--verify` **discovers** the install (does not hard-code paths), validates it, and writes a profile (`monitoring-upgrade.env` next to the script by default). Supported layouts include:
+
+- Grafana `host-tree` (`/opt/grafana` bind-mounted into a container) or `container-fs` (binaries inside e.g. `mamori-grafana` / `grafana` at `/opt/mamori/grafana`)
+- InfluxDB `host-tree` (`/opt/influxdb`), `host-package` (`/usr/bin/influxd` + `/etc/influxdb`), or `container`
+
+The upgrade **refuses to run** without a profile from a successful `--verify`. Re-run `--verify` after upgrading to refresh recorded versions.
 
 For an **AIO** container whose Grafana/Influx binaries live on Docker volumes, use `media/update-monitoring-in-container.sh` instead.
 

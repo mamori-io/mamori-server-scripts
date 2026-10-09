@@ -3,3 +3,4 @@
 *.mamori-root-password.env
 .mamori-root-password.env
 .mamori-firewall.env
+monitoring-upgrade.env
