@@ -250,6 +250,8 @@ bash dump-lb-config.sh
 
 ## Shared-services — Influx + Grafana (optional monitoring)
 
+Target versions: **InfluxDB OSS 1.13.1** (keep `/write?db=mamori`) and **Grafana Enterprise 13.2.3**.
+
 Install InfluxDB and Grafana on the **same shared-services** host (see historical media steps in older HA notes, or Mamori support). Then on an app node:
 
 ```bash
@@ -257,6 +259,23 @@ docker exec -it mamori msql "call SET_SERVER_PROPERTY('influxdb_write_url', 'htt
 ```
 
 Grafana UI is typically `http://<shared-services-host>:3000/monitor` (or proxied via the LB `/monitor`).
+
+To upgrade **HA shared-services** Grafana/Influx (host trees `/opt/grafana`, `/opt/influxdb` and containers `mamori-grafana` / `mamori-influx`):
+
+```bash
+cd /path/to/mamori-server-scripts/ha
+sudo ./upgrade-shared-monitoring.sh --verify          # check layout only
+sudo ./upgrade-shared-monitoring.sh --verify grafana
+sudo ./upgrade-shared-monitoring.sh                   # upgrade both
+sudo ./upgrade-shared-monitoring.sh grafana
+sudo ./upgrade-shared-monitoring.sh influxdb
+```
+
+`--verify` checks directories, binaries, container existence/mounts/entrypoints, and current vs target versions; it does not download or change anything. Exit status is non-zero if the layout does not match what the upgrade expects.
+
+For an **AIO** container whose Grafana/Influx binaries live on Docker volumes, use `media/update-monitoring-in-container.sh` instead.
+
+Grafana 13 no longer ships `grafana-server`; start with `grafana server` (upgrade scripts install a shim for older entrypoints).
 
 ---
 

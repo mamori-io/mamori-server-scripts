@@ -37,6 +37,22 @@ bash validate-install.sh
 Do not leave `MAMORI_ROOT_PASSWORD` on a long-lived `docker create -e` definition.
 Never store it in a host env file under this repo.
 
+## Monitoring stack (Grafana / InfluxDB)
+
+Pinned for packaging: **Grafana Enterprise 13.2.3**, **InfluxDB OSS 1.13.1**.
+
+AIO containers mount Grafana and InfluxDB on named volumes, so upgrading the
+image alone does not replace those binaries. From the host (Mamori container
+name defaults to `mamori`):
+
+```bash
+cd media
+sudo ./update-monitoring-in-container.sh
+```
+
+Image rebuilds (CI / docker tree) download media via
+`/vagrant/docker/prepare_monitoring_media.sh`.
+
 ## Upgrade cleanup and uninstall
 
 After a verified upgrade, remove leftover backup containers/images:
