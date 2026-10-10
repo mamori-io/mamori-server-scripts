@@ -11,34 +11,33 @@ Docs: [HA install](https://doc.mamori.io/050-installation/ha-install).
 
 ## Servers and services
 
-| Server | Services |
-|--------|----------|
-| **LB / gateway** | nginx (HTTPS → app `:80`), HAProxy (DB/SSH/etc. proxies → app nodes) |
-| **App nodes** | Mamori container only (`mamori-var`, `mamori-nginx-conf`) |
-| **Postgres box** | PostgreSQL 18 (`mamorisys`, `audit`, `xcs`), remote SCRAM-SHA-256 auth |
-| **Shared-services box** | Mosquitto (`:1883`), InfluxDB (`:8086`), Grafana (`:3000`) |
+Two front-door topologies are supported. Shared pieces (Postgres, app nodes, Grafana/Influx) are the same; Mosquitto and LB software differ.
 
-Do **not** put Mosquitto / Influx / Grafana on the LB or Postgres host. App nodes do not run local Postgres/Influx/Grafana volumes.
+| | **Cloud LB (A)** | **Deployed gateway (B)** |
+|--|------------------|--------------------------|
+| HTTPS / UI | Customer cloud LB | Host nginx on gateway |
+| DB / SSH proxies | Customer network → app ports | Host HAProxy on gateway |
+| Mosquitto | Monitoring box | Gateway |
+| Grafana + Influx | Monitoring box | Monitoring box |
+| App nginx | Inside Mamori container | Inside Mamori container |
+
+**HTTPS TLS** may terminate at the **LB** or at the **app node** (container nginx). That choice is independent of A vs B. See the public HA install doc for SSL ops scripts.
 
 ```
-  Clients
-     |
-     v
- +--------+----------+       +------------------+
- | LB / gateway      | ----> | App node 1..N    |
- | nginx + HAProxy   |       | mamori container |
- +--------+----------+       +--------+---------+
-                                      |
-              +-----------------------+-----------------------+
-              |                                               |
-              v                                               v
-     +----------------+                            +------------------------+
-     | Postgres box   |                            | Shared-services box    |
-     | PostgreSQL 18  |                            | Mosquitto              |
-     | mamorisys      |                            | InfluxDB + Grafana     |
-     | audit, xcs     |                            +------------------------+
-     +----------------+
+Scenario B (deployed gateway) — typical:
+
+  Clients --> gateway (nginx + HAProxy + Mosquitto) --> app nodes
+       app nodes --> Postgres
+       app nodes --> monitoring (Grafana + Influx)
+
+Scenario A (cloud LB):
+
+  Clients --> cloud LB --> app nodes
+       app nodes --> Postgres
+       app nodes --> monitoring (Mosquitto + Grafana + Influx)
 ```
+
+App nodes do not run local Postgres/Influx/Grafana volumes.
 
 ---
 
@@ -121,48 +120,58 @@ Clear browser cookies (or use a private window) after restore.
 
 ---
 
-## Shared-services — Mosquitto (required for multi-node)
+## Mosquitto (required for multi-node)
 
-Install Eclipse Mosquitto on the **shared-services** host (Docker). Example:
+Run on the **monitoring** host (scenario A) or the **gateway** host (scenario B):
 
 ```bash
-mkdir -p /opt/mamori/mosquitto/{data,log}
-cat >/opt/mamori/mosquitto/mosquitto.conf <<'EOF'
-persistence true
-persistence_location /mosquitto/data/
-log_dest file /mosquitto/log/mosquitto.log
-bind_address 0.0.0.0
-allow_anonymous true
-EOF
-
-docker create --name mosquitto --restart always --network host \
-  --log-opt max-size=10m --log-opt max-file=5 \
-  -v /opt/mamori/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf \
-  -v /opt/mamori/mosquitto/data:/mosquitto/data \
-  -v /opt/mamori/mosquitto/log:/mosquitto/log \
-  eclipse-mosquitto
-docker start mosquitto
+sudo ./install-ha-mosquitto.sh --verify
+sudo ./install-ha-mosquitto.sh --install
 ```
 
-On node1:
+On node1 (use the host where Mosquitto runs):
 
 ```bash
-docker exec -it mamori msql "call SET_SERVER_PROPERTY('mqtt_server', 'tcp://<shared-services-host>:1883')"
+docker exec -it mamori msql "call SET_SERVER_PROPERTY('mqtt_server', 'tcp://<mosquitto-host>:1883')"
 docker exec -it mamori sv restart mamori_fqod
 ```
 
 ---
 
-## Load balancer (gateway host)
+## Deployed gateway (scenario B) — nginx + HAProxy
 
-Configure nginx (HTTPS → app upstream) and HAProxy (proxies → app backends) with node1 registered. If using HAProxy PROXY protocol:
+After app node1 is verified off-LB, on the **gateway** host:
+
+```bash
+# 1) Mosquitto (if not already on gateway)
+sudo ./install-ha-mosquitto.sh --verify
+sudo ./install-ha-mosquitto.sh --install
+
+# 2) HAProxy (seed first app node)
+sudo ./install-ha-haproxy.sh --verify
+sudo ./install-ha-haproxy.sh --install --seed-name m1 --seed-ip <node1-ip>
+
+# 3) Host nginx (Mamori LB site)
+cd ../nginx
+sudo ./install-host-nginx.sh --role gateway --verify
+sudo ./install-host-nginx.sh --role gateway --install --seed-name m1 --seed-ip <node1-ip>
+sudo ./nginx-update-gateway-ssl.sh /path/to/fullchain.crt /path/to/privkey.key
+
+# 4) Register node1
+cd ../ha
+bash manage-lb-node.sh --verify
+bash manage-lb-node.sh --register --name m1 --ip <node1-ip>
+bash dump-lb-config.sh
+```
+
+If using HAProxy PROXY protocol, on node1:
 
 ```bash
 docker exec -it mamori msql "call SET_SERVER_PROPERTY('haproxy', 'true')"
 docker exec -it mamori sv restart mamori_fqod
 ```
 
-Use `dump-lb-config.sh` / `manage-lb-node.sh` once nginx and HAProxy configs exist on the gateway.
+**Scenario A** (cloud LB): skip HAProxy / host nginx / `manage-lb-node.sh`. Point the cloud LB at app nodes; use `nginx-update-container-ssl.sh` only if TLS terminates on the app node.
 
 ---
 

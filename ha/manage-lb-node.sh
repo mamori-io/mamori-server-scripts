@@ -23,18 +23,19 @@ NO_RELOAD=0
 
 usage() {
     cat <<'EOF'
-Usage: manage-lb-node.sh --register|--unregister|--enable|--disable [options]
+Usage: manage-lb-node.sh --verify|--register|--unregister|--enable|--disable [options]
 
 Manage an HA app node in the gateway load balancer (hosts + nginx + HAProxy).
 
 Actions (exactly one required):
+  --verify               Preflight: configs exist, upstream hub, HAProxy listens, nginx -t / haproxy -c
   --register             Add node to hosts, nginx upstream hub, and all HAProxy listens
   --unregister           Remove node from nginx, HAProxy, and hosts aliases
   --enable               Mark node up (remove nginx 'down' / HAProxy 'disabled')
   --disable              Mark node down without removing (nginx 'down', HAProxy 'disabled')
 
 Options:
-  --name <hostname>      Backend hostname used in configs (e.g. m3) [required]
+  --name <hostname>      Backend hostname used in configs (e.g. m3) [required except --verify]
   --ip <address>         Node IP reachable from the gateway [--register required]
   --server-id <id>       HAProxy server id (default: mamorihubN when --name is mN)
   --dry-run              Print planned changes; do not write or reload
@@ -46,6 +47,7 @@ Options:
   -h, --help             Show this help
 
 Examples:
+  bash manage-lb-node.sh --verify
   bash manage-lb-node.sh --register --name m3 --ip 10.240.0.6
   bash manage-lb-node.sh --disable --name m3
   bash manage-lb-node.sh --enable --name m3
@@ -53,9 +55,65 @@ Examples:
 EOF
 }
 
+run_verify() {
+    local errors=0
+    echo "=== manage-lb-node verify ==="
+    for f in "$HOSTS_FILE" "$NGINX_LB" "$HAPROXY_CFG"; do
+        if [[ -f "$f" ]]; then
+            echo "  OK: file $f"
+        else
+            echo "  FAIL: file not found: $f" >&2
+            errors=$((errors + 1))
+        fi
+    done
+    if [[ -f "$NGINX_LB" ]]; then
+        if grep -qE 'upstream[[:space:]]+hub[[:space:]]*\{' "$NGINX_LB"; then
+            echo "  OK: nginx upstream hub present"
+        else
+            echo "  FAIL: nginx missing 'upstream hub { ... }'" >&2
+            errors=$((errors + 1))
+        fi
+    fi
+    if [[ -f "$HAPROXY_CFG" ]]; then
+        if grep -qE '^[[:space:]]*listen[[:space:]]+' "$HAPROXY_CFG" \
+            && grep -qE '^[[:space:]]*server[[:space:]]+' "$HAPROXY_CFG"; then
+            echo "  OK: HAProxy has listen blocks with server lines"
+        else
+            echo "  FAIL: HAProxy needs listen blocks with at least one server line" >&2
+            errors=$((errors + 1))
+        fi
+    fi
+    if command -v nginx >/dev/null 2>&1; then
+        if nginx -t >/dev/null 2>&1; then
+            echo "  OK: nginx -t"
+        else
+            echo "  FAIL: nginx -t" >&2
+            errors=$((errors + 1))
+        fi
+    else
+        echo "  WARN: nginx binary not found"
+    fi
+    if command -v haproxy >/dev/null 2>&1 && [[ -f "$HAPROXY_CFG" ]]; then
+        if haproxy -c -f "$HAPROXY_CFG" >/dev/null 2>&1; then
+            echo "  OK: haproxy -c"
+        else
+            echo "  FAIL: haproxy -c" >&2
+            errors=$((errors + 1))
+        fi
+    else
+        echo "  WARN: haproxy binary not found or config missing"
+    fi
+    if [[ "$errors" -gt 0 ]]; then
+        echo "Verify FAILED with ${errors} error(s)." >&2
+        exit 1
+    fi
+    echo "Verify PASSED. Safe to --register when an app node is ready."
+    exit 0
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --register|--unregister|--enable|--disable)
+        --verify|--register|--unregister|--enable|--disable)
             if [[ -n "$ACTION" ]]; then
                 echo "ERROR: only one action allowed" >&2
                 exit 1
@@ -117,10 +175,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ACTION" ]]; then
-    echo "ERROR: specify --register, --unregister, --enable, or --disable" >&2
+    echo "ERROR: specify --verify, --register, --unregister, --enable, or --disable" >&2
     usage >&2
     exit 1
 fi
+
+if [[ "$ACTION" == "verify" ]]; then
+    run_verify
+fi
+
 if [[ -z "$NAME" ]]; then
     echo "ERROR: --name is required" >&2
     exit 1

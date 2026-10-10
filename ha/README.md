@@ -134,7 +134,29 @@ Restores the backed-up secure nginx config after
 - `-n` / `--name <container>` — container name (default: `mamori`)
 - `-f` / `--file <path>` — specific backup file (default: active/latest backup)
 
-## Gateway / load-balancer scripts
+## Gateway / edge service installers
+
+Each supports `--verify` (write profile), `--install`, and `--upgrade` (upgrade requires a prior verify profile). See [HA-README.md](HA-README.md) for install order.
+
+### install-ha-mosquitto.sh
+
+Docker Eclipse Mosquitto (host network, `/opt/mamori/mosquitto`). Run on the
+**gateway** (scenario B) or **monitoring** host (scenario A).
+
+### install-ha-haproxy.sh
+
+APT HAProxy + Mamori listen-block template (`ha/templates/haproxy.cfg`).
+`--install` requires `--seed-name` and `--seed-ip` so `manage-lb-node.sh` can
+clone server lines. Gateway host only.
+
+### Host nginx (`../nginx/install-host-nginx.sh`)
+
+APT nginx on any box. `--role gateway` installs
+`sites-available/load-balancer` (`upstream hub`, `X-Real-IP`). Use
+`../nginx/nginx-update-gateway-ssl.sh` for gateway TLS. App-container TLS
+remains `nginx-update-container-ssl.sh`.
+
+## Gateway / load-balancer node management
 
 ### dump-lb-config.sh
 
@@ -152,6 +174,7 @@ Backups go under `/opt/mamori/lb-backup/`.
 
 Actions (exactly one):
 
+- `--verify` — preflight configs / `nginx -t` / `haproxy -c` (no `--name`)
 - `--register` — requires `--name` and `--ip`
 - `--unregister` — requires `--name`
 - `--enable` / `--disable` — requires `--name` (nginx `down`, HAProxy `disabled`)

@@ -4,3 +4,7 @@
 .mamori-root-password.env
 .mamori-firewall.env
 monitoring-upgrade.env
+gateway-mosquitto.env
+gateway-haproxy.env
+gateway-nginx.env
+nginx/gateway-nginx.env
