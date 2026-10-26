@@ -8,3 +8,7 @@ gateway-mosquitto.env
 gateway-haproxy.env
 gateway-nginx.env
 nginx/gateway-nginx.env
+
+# Presidio offline docker-save archives (hundreds of MB)
+integrations/presidio/*.tgz
+integrations/presidio/images/

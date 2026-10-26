@@ -1,0 +1,28 @@
+# Matches the running stack on mamori-presodio (66.226.150.208).
+# Analyzer: English spaCy + Thai (PyThaiNLP). Anonymizer is stock Presidio.
+services:
+  presidio-analyzer:
+    image: mamori/presidio-analyzer:thai
+    container_name: presidio-analyzer
+    restart: unless-stopped
+    ports:
+      - "5002:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  presidio-anonymizer:
+    image: ghcr.io/data-privacy-stack/presidio-anonymizer:latest
+    container_name: presidio-anonymizer
+    restart: unless-stopped
+    ports:
+      - "5001:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
