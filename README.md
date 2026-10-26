@@ -12,6 +12,7 @@ Scripts for operating and installing a Mamori server.
 | `lib/` | Shared helpers (portal root password, timezone/swap, firewall) |
 | `server/` | Host checks (ports, dumps) |
 | `nginx/` | Host nginx install/verify/upgrade, container & gateway SSL, config refresh |
+| `integrations/presidio/` | Presidio analyzer/anonymizer install, upgrade, uninstall (image build is `docker-db-scripts/presidio`) |
 
 ## Portal root password (`MAMORI_ROOT_PASSWORD`)
 
