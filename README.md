@@ -51,6 +51,15 @@ cd media
 sudo ./update-monitoring-in-container.sh
 ```
 
+A clean install can crash-loop Grafana 13 (`missing configuration for current encryption provider misconfigured`) and leak plugin processes until the container cannot fork. DM rewrites `defaults.ini` on startup, so the repair writes `conf/custom.ini` instead:
+
+```bash
+cd media
+sudo ./fix_grafana_13.sh
+```
+
+The script stops Grafana, restarts it, and prints a command that shows only the latest start in `grafana.log`.
+
 Image rebuilds (CI / docker tree) download media via
 `/vagrant/docker/prepare_monitoring_media.sh`.
 
