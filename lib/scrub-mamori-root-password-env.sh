@@ -143,6 +143,12 @@ fi
 CREATE_ARGS=(--name "$CONTAINER_NAME")
 [[ "$NETWORK" == "host" ]] && CREATE_ARGS+=(--network host)
 [[ "$PRIVILEGED" == "true" ]] && CREATE_ARGS+=(--privileged)
+# Inspect reports bytes. A bare --shm-size number is bytes. Dropping this
+# puts the recreated container back on Docker's 64 MB default.
+SHM_BYTES="$($DOCKER inspect -f '{{.HostConfig.ShmSize}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+if [[ "$SHM_BYTES" =~ ^[0-9]+$ && "$SHM_BYTES" -gt 0 ]]; then
+    CREATE_ARGS+=(--shm-size "$SHM_BYTES")
+fi
 if [[ -n "$RESTART" && "$RESTART" != "no" ]]; then
     if [[ "$RESTART" == "on-failure" && "${RESTART_RETRIES:-0}" -gt 0 ]]; then
         CREATE_ARGS+=(--restart "on-failure:${RESTART_RETRIES}")

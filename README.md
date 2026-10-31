@@ -24,6 +24,7 @@ Install helpers:
 
 - `media/validate-install.sh` — ports, disk, Docker/Podman, hostname, timezone (list/set), swap (optional add); reports whether install will prompt for portal root (Ubuntu and Red Hat)
 - `media/install-*.sh` — prompt for (or use exported) `MAMORI_ROOT_PASSWORD` on first create/start, then scrub it from the container
+- `media/install-*.sh` and `media/upgrade-*.sh` — `--shm-size` defaults from host RAM; override with `--shm-size` (for example `--shm-size 1g`)
 - `ha/validate-new-node.sh` — without `--env-file` = first node (install will prompt); with `--env-file` = additional node
 - `ha/install-ha-node.sh` / `ha/start-ha-node.sh` — no `--env-file` prompts for PG_* + portal root; `--env-file` never prompts; joining nodes get `DERBY_USER_ROOT` via extract/join; scrub after first boot
 

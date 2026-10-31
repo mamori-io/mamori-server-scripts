@@ -46,6 +46,7 @@ Checks:
   - Timezone; offer to configure if missing
   - Swap (optional; offer to create 4GB /swapfile if missing)
   - Whether portal root bootstrap will be required at install (does not prompt)
+  - Shared memory size install will pass as --shm-size (from host RAM)
 
 Options:
   --list-timezones [filter]  List IANA timezones (optional substring filter) and exit
@@ -108,6 +109,8 @@ source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
 source "$SCRIPT_DIR/../lib/ensure-host-swap.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/mamori-shm-size.sh"
 
 if [[ "$LIST_TIMEZONES" -eq 1 ]]; then
     host_timezone_list "$LIST_TIMEZONES_FILTER"
@@ -161,6 +164,7 @@ elif [[ "$MEM_MB" -lt "$REC_RAM_MB" ]]; then
 else
     pass "RAM ${MEM_MB}MB"
 fi
+info "Shared memory: --shm-size $(mamori_shm_size_from_memory) (override with --shm-size on install or upgrade)"
 echo ""
 
 # ---------- ports ----------

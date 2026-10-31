@@ -14,6 +14,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/ensure-mamori-root-password.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/mamori-shm-size.sh"
+
+mamori_shm_size_parse_args "$@" || exit 1
+if [[ ${#MAMORI_SHM_REMAINING[@]} -gt 0 ]]; then
+    echo "ERROR: unexpected argument: ${MAMORI_SHM_REMAINING[*]}" >&2
+    exit 1
+fi
+mamori_shm_size_resolve || exit 1
+echo "Container shared memory: --shm-size ${MAMORI_SHM_SIZE}"
 
 DOCKER="${DOCKER:-sudo podman}"
 export DOCKER
@@ -33,6 +43,7 @@ CREATE_ARGS=(
     --network host
     --restart always
     --privileged
+    --shm-size "$MAMORI_SHM_SIZE"
     --log-opt max-size=10m --log-opt max-file=10
     -v /run/podman/podman.sock:/var/run/docker.sock
     -v mamori-var:/opt/mamori/var
