@@ -1,6 +1,6 @@
 # Grafana / InfluxDB flow check
 
-Mamori writers POST Influx line protocol to the server property `influxdb_write_url`. Grafana only reads database `mamori` on `http://localhost:8086` (datasource name `mamori`). It does not collect metrics.
+Mamori writers POST Influx line protocol to the server property `influxdb_write_url`. Hub SQL exposes it as `SYS.SYSSERVERPROPERTIES` (`NAME` / `VAL`). Grafana only reads database `mamori` on `http://localhost:8086` (datasource name `mamori`). It does not collect metrics.
 
 All-in-one InfluxDB listens on `localhost:8086` inside the `mamori` container. On HA, app nodes write to the shared-services host:
 

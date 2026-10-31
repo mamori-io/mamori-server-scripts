@@ -128,21 +128,15 @@ echo
 
 read_write_url() {
     local raw line
-    raw="$(dexec msql.int "select value_property from rms.server_property where key_property = 'influxdb_write_url'" 2>/dev/null || true)"
+    # Hub SQL exposes this as SYS.SYSSERVERPROPERTIES (NAME, VAL), not rms.server_property.
+    raw="$(dexec msql.int "select NAME, VAL from SYS.SYSSERVERPROPERTIES where NAME = 'influxdb_write_url'" 2>/dev/null || true)"
     raw="${raw//\\/}"
     line="$(printf '%s\n' "$raw" | grep -oE 'https?://[^"[:space:]]+' | head -1 || true)"
     if [[ -n "$line" ]]; then
         printf '%s\n' "$line"
         return
     fi
-    # msql.int Poison-encodes the row list. An empty list means the property is unset.
-    if printf '%s\n' "$raw" | grep -q '\[\]'; then
-        printf '\n'
-        return
-    fi
-    raw="$(dexec /opt/mamori/mamori/dm/dm/bin/dm rpc 'v = Dm.Cirro.Query.as_cirro_internal(fn c -> Dm.Cirro.Query.select_value("select value_property from rms.server_property where key_property = '"'"'influxdb_write_url'"'"'", c) end); IO.puts(v || "")' 2>/dev/null || true)"
-    raw="${raw//\\/}"
-    printf '%s\n' "$raw" | grep -oE 'https?://[^"[:space:]]+' | head -1 || true
+    printf '\n'
 }
 
 age_is_fresh() {
