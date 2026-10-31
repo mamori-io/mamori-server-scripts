@@ -47,6 +47,7 @@ Checks:
   - Swap (optional; offer to create 4GB /swapfile if missing)
   - Whether portal root bootstrap will be required at install (does not prompt)
   - Shared memory size install will pass as --shm-size (from host RAM)
+  - When a Mamori container is running, its /dev/shm (docker exec df -h /dev/shm)
 
 Options:
   --list-timezones [filter]  List IANA timezones (optional substring filter) and exit
@@ -57,6 +58,7 @@ Options:
 
 Environment:
   DOCKER                 Docker/Podman CLI (default: docker; Red Hat: sudo podman)
+  CONTAINER_NAME         Running container to check for /dev/shm (default: mamori)
   PORT_CHECK_SCRIPT      Override path to server-port-check.sh
   HOST_SWAP_SIZE_GB      Swap size when creating (default: 4)
   HOST_SWAP_FILE         Swapfile path (default: /swapfile)
@@ -125,6 +127,32 @@ info() { echo -e "       $*"; }
 bytes_to_gb() {
     local kb="$1"
     echo $((kb / 1024 / 1024))
+}
+
+# /dev/shm inside a running container. Skipped when Docker is down or no
+# Mamori container is running. Docker's default is 64MB (67108864 bytes).
+report_running_container_shm() {
+    local name state shm_df shm_cfg line
+    name="${CONTAINER_NAME:-mamori}"
+    state="$($DOCKER inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)"
+    if [[ "$state" != "true" ]]; then
+        info "No running ${name} container; skipped /dev/shm check"
+        return 0
+    fi
+    shm_cfg="$($DOCKER inspect -f '{{.HostConfig.ShmSize}}' "$name" 2>/dev/null || true)"
+    shm_df="$($DOCKER exec "$name" df -h /dev/shm 2>/dev/null || true)"
+    if [[ -z "$shm_df" ]]; then
+        warn "Container ${name} is running but df /dev/shm failed"
+        return 0
+    fi
+    if [[ "$shm_cfg" =~ ^[0-9]+$ && "$shm_cfg" -le 67108864 ]]; then
+        warn "Container ${name} shared memory is ${shm_cfg} bytes (Docker default is 64MB). Recreate with --shm-size (install would use $(mamori_shm_size_from_memory))"
+    else
+        pass "Running ${name} /dev/shm (configured ${shm_cfg:-unknown} bytes)"
+    fi
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && info "$line"
+    done <<<"$shm_df"
 }
 
 resolve_port_check() {
@@ -258,6 +286,7 @@ else
 
     if $DOCKER info >/dev/null 2>&1; then
         pass "Daemon is reachable"
+        report_running_container_shm
     else
         warn "Binary present but daemon not reachable (start docker/podman before install)"
     fi
