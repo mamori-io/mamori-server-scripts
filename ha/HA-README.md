@@ -267,7 +267,7 @@ Install InfluxDB and Grafana on the **same shared-services** host (see historica
 docker exec -it mamori msql "call SET_SERVER_PROPERTY('influxdb_write_url', 'http://<shared-services-host>:8086/write?db=mamori')"
 ```
 
-Grafana UI is typically `http://<shared-services-host>:3000/monitor` (or proxied via the LB `/monitor`).
+Grafana UI is typically `http://<shared-services-host>:3000/monitor/` (or proxied via the LB `/monitor/`). The Monitor menu and JWT `url_login` need the trailing slash; `location = /monitor` must 301 to `/monitor/` (see `templates/nginx-load-balancer.conf`).
 
 To upgrade **HA / shared-services** Grafana/Influx on the monitoring host:
 
@@ -298,7 +298,7 @@ For an **AIO** container whose Grafana/Influx binaries live on Docker volumes, u
 
 Grafana 13 no longer ships `grafana-server`; start with `grafana server` (upgrade scripts install a shim for older entrypoints).
 
-Upgrades also replace `conf/defaults.ini` from the Grafana package and ensure `conf/custom.ini` has `[secrets_manager]` plus `[unified_alerting.state_history] backend = annotations`. Leaving a pre-13 `defaults.ini` in place causes Grafana to crash-loop (nginx `/monitor/` → 502).
+Upgrades restore packaged `conf/defaults.ini` (do not keep a pre-13 or DM-written copy) and write Mamori overlays in `conf/custom.ini`: `[secrets_manager]`, `[unified_alerting.state_history] backend = annotations`, `[unified_alerting.notification_history] enabled = false`, `[cloud_migration] enabled = false`, `[server] serve_from_sub_path = true` with `root_url` under `/monitor`, and `[auth.jwt] url_login = true`. A `.defaults.keep` marker is created so later tools do not overwrite packaged defaults. Leaving a pre-13 `defaults.ini` in place causes Grafana to crash-loop (nginx `/monitor/` → 502). After an AIO-style container install, `media/fix_grafana_13.sh --validate` checks the same settings.
 
 ---
 

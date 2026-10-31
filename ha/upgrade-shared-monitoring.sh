@@ -470,9 +470,9 @@ install_grafana_shim() {
   chmod +x "${home}/bin/grafana-server"
 }
 
-# Grafana 13 requires modern defaults.ini (secrets_manager, alerting sections).
+# Grafana 13 requires modern defaults.ini (secrets_manager, alerting, GMS).
 # Binary-only upgrades leave a stale defaults.ini and crash (502 via nginx).
-# Install package defaults.ini and ensure custom.ini has Mamori-critical overrides.
+# Keep packaged defaults.ini; Mamori settings go in custom.ini.
 ini_get_key() {
   local file="$1" section="$2" key="$3"
   awk -v sec="[$section]" -v key="$key" '
@@ -482,6 +482,23 @@ ini_get_key() {
       sub(/^[^=]*=[[:space:]]*/, ""); print; exit
     }
   ' "$file" 2>/dev/null || true
+}
+
+ini_set() {
+  local file="$1" section="$2" key="$3" value="$4" tmp
+  tmp=$(mktemp)
+  awk -v sec="[$section]" -v key="$key" -v val="$value" '
+    function emit() { print key " = " val }
+    BEGIN { done=0; insec=0 }
+    $0 == sec { print; insec=1; next }
+    insec && $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { emit(); done=1; next }
+    insec && /^\[/ { if (!done) emit(); done=1; insec=0 }
+    { print }
+    END {
+      if (insec && !done) emit()
+      else if (!done) { print ""; print sec; emit() }
+    }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
 ensure_grafana_custom_overrides() {
@@ -501,33 +518,30 @@ ensure_grafana_custom_overrides() {
     secret=$(ini_get_key "$custom" "secrets_manager.encryption.secret_key.v1" secret_key)
   fi
 
-  # Append missing Grafana-13 / Mamori sections (do not rewrite whole file).
-  if ! grep -q '^\[secrets_manager\]' "$custom" 2>/dev/null; then
-    {
-      echo ""
-      echo "[secrets_manager]"
-      echo "encryption_provider = secret_key.v1"
-    } >> "$custom"
+  ini_set "$custom" "secrets_manager" "encryption_provider" "secret_key.v1"
+  if [ -n "$secret" ]; then
+    ini_set "$custom" "secrets_manager.encryption.secret_key.v1" "secret_key" "$secret"
+  elif [ -z "$(ini_get_key "$custom" "secrets_manager.encryption.secret_key.v1" secret_key)" ]; then
+    ini_set "$custom" "secrets_manager.encryption.secret_key.v1" "secret_key" ""
   fi
-  if ! grep -q '^\[secrets_manager.encryption.secret_key.v1\]' "$custom" 2>/dev/null; then
-    {
-      echo ""
-      echo "[secrets_manager.encryption.secret_key.v1]"
-      if [ -n "$secret" ]; then
-        echo "secret_key = ${secret}"
-      else
-        echo "; set secret_key to match [security] secret_key"
-        echo "secret_key ="
-      fi
-    } >> "$custom"
-  fi
-  if ! grep -q '^\[unified_alerting.state_history\]' "$custom" 2>/dev/null; then
-    {
-      echo ""
-      echo "[unified_alerting.state_history]"
-      echo "backend = annotations"
-    } >> "$custom"
-  fi
+  ini_set "$custom" "unified_alerting.state_history" "enabled" "true"
+  ini_set "$custom" "unified_alerting.state_history" "backend" "annotations"
+  ini_set "$custom" "unified_alerting.notification_history" "enabled" "false"
+  ini_set "$custom" "cloud_migration" "enabled" "false"
+  ini_set "$custom" "cloud_migration" "domain" "grafana.net"
+  # Do not force http_addr=127.0.0.1: HA Grafana is reached from the gateway/LB.
+  ini_set "$custom" "server" "http_port" "3000"
+  ini_set "$custom" "server" "root_url" "%(protocol)s://%(domain)s:%(http_port)s/monitor"
+  ini_set "$custom" "server" "serve_from_sub_path" "true"
+  ini_set "$custom" "auth.jwt" "enabled" "true"
+  ini_set "$custom" "auth.jwt" "header_name" "X-JWT-Mamori-Grafana"
+  ini_set "$custom" "auth.jwt" "enable_login_token" "true"
+  ini_set "$custom" "auth.jwt" "auto_sign_up" "true"
+  ini_set "$custom" "auth.jwt" "url_login" "true"
+  ini_set "$custom" "auth.jwt" "username_claim" "sub"
+  ini_set "$custom" "auth.jwt" "email_claim" "email"
+  ini_set "$custom" "auth.jwt" "role_attribute_path" "role"
+  ini_set "$custom" "auth.jwt" "jwk_set_file" "/opt/mamori/grafana/conf/jwks.json"
 }
 
 fix_grafana_conf_host() {
@@ -542,6 +556,7 @@ fix_grafana_conf_host() {
     cp -a "${src}/conf/defaults.ini" "${conf}/defaults.ini.upstream"
   fi
   ensure_grafana_custom_overrides "${conf}/custom.ini" "${conf}/defaults.ini.pre-upgrade.bak"
+  touch "${conf}/.defaults.keep"
 }
 
 fix_grafana_conf_container() {
@@ -565,6 +580,7 @@ fix_grafana_conf_container() {
   fi
   ensure_grafana_custom_overrides "${stage}/custom.ini" "$old"
   docker cp "${stage}/custom.ini" "${c}:${home}/conf/custom.ini"
+  docker exec "$c" touch "${home}/conf/.defaults.keep" || true
   rm -rf "$stage" "$old"
 }
 
@@ -594,6 +610,13 @@ fix_grafana_into_container() {
 exec ${home}/bin/grafana server --homepath=${home}/
 EOF
 chmod +x /etc/service/grafana/run"
+    docker exec "$c" sh -c "cat > /etc/service/grafana/finish <<'EOF'
+#!/bin/sh
+pkill -f '/opt/mamori/grafana/data/plugins-bundled/' 2>/dev/null || true
+pkill -f '/opt/grafana/data/plugins-bundled/' 2>/dev/null || true
+exit 0
+EOF
+chmod +x /etc/service/grafana/finish"
   fi
   rm -rf "$stage"
 }

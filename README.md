@@ -51,14 +51,17 @@ cd media
 sudo ./update-monitoring-in-container.sh
 ```
 
-A clean install can crash-loop Grafana 13 (`missing configuration for current encryption provider misconfigured`) and leak plugin processes until the container cannot fork. DM rewrites `defaults.ini` on startup, so the repair writes `conf/custom.ini` instead:
+A clean install can crash-loop Grafana 13 (`missing configuration for current encryption provider misconfigured`) and leak plugin processes until the container cannot fork. Packaged `defaults.ini` must stay; Mamori overlays go in `conf/custom.ini`. Nginx must 301 `/monitor` to `/monitor/` or the Monitor menu hits Phoenix (`Invalid URL`).
 
 ```bash
 cd media
 sudo ./fix_grafana_13.sh
+sudo ./fix_grafana_13.sh --validate
 ```
 
-The script stops Grafana, restarts it, and prints a command that shows only the latest start in `grafana.log`.
+`--validate` checks packaged defaults (`[secrets_manager]`, `[cloud_migration]`), `.defaults.keep`, `custom.ini` (encryption, alerting annotations, GMS off, `serve_from_sub_path`, JWT `url_login`), nginx `location = /monitor`, listen on 3000, `HTTP Server Listen` / `subUrl=/monitor`, no encryption/GMS/`newosproc` errors, and that plugin processes are not leaking. The default repair run applies those settings, then validates.
+
+HA shared-services Grafana uses `ha/upgrade-shared-monitoring.sh` (same `custom.ini` overlays; do not bind Grafana to `127.0.0.1` on that host).
 
 Image rebuilds (CI / docker tree) download media via
 `/vagrant/docker/prepare_monitoring_media.sh`.
