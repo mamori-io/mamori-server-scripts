@@ -162,4 +162,28 @@ sudo bash nginx-update-container-ssl.sh /path/to/fullchain.crt /path/to/privkey.
 # sudo bash nginx-update-container-ssl.sh cert.crt key.key --reload
 ```
 
+**Upgrade nginx inside the Mamori container** (latest nginx.org stable, not a Mamori upgrade). Packages are `nginx` + `nginx-module-perl` from nginx.org, not the Ubuntu/RHEL nginx package.
+
+Connected site (container must reach nginx.org):
+
+```bash
+cd nginx
+sudo ./nginx-upgrade-container.sh --verify
+sudo ./nginx-upgrade-container.sh --upgrade
+```
+
+Air-gapped site — build media on a connected machine, copy the `.tgz` over, then install from it:
+
+```bash
+# connected machine (matches current Mamori image: Ubuntu noble amd64)
+./nginx-get-media.sh --dir /tmp
+# ./nginx-get-media.sh --from-container mamori --dir /tmp
+# ./nginx-get-media.sh --codename noble,jammy --dir /tmp
+
+# air-gapped Mamori host
+sudo ./nginx-upgrade-container.sh --upgrade --media-file=/tmp/nginx-org-stable-VERSION-ubuntu-noble-amd64.tgz
+```
+
+The new binary stays in the container writable layer until the container is recreated from a Mamori image.
+
 HA gateway Mosquitto / HAProxy / node register: see `ha/HA-README.md`.
