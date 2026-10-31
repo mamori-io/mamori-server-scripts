@@ -13,6 +13,7 @@ Scripts for operating and installing a Mamori server.
 | `server/` | Host checks (ports, dumps) |
 | `nginx/` | Host nginx install/verify/upgrade, container & gateway SSL, config refresh |
 | `integrations/presidio/` | Presidio analyzer/anonymizer install, upgrade, uninstall (image build is `docker-db-scripts/presidio`) |
+| `integrations/grafana-influx/` | Check that Hub, the web app, and Telegraf are writing into InfluxDB |
 
 ## Portal root password (`MAMORI_ROOT_PASSWORD`)
 
@@ -63,6 +64,13 @@ sudo ./fix_grafana_13.sh --validate
 `--validate` checks packaged defaults (`[secrets_manager]`, `[cloud_migration]`), `.defaults.keep`, `custom.ini` (encryption, alerting annotations, GMS off, `serve_from_sub_path`, JWT `url_login`), nginx `location = /monitor`, listen on 3000, `HTTP Server Listen` / `subUrl=/monitor`, no encryption/GMS/`newosproc` errors, and that plugin processes are not leaking. The default repair run applies those settings, then validates.
 
 HA shared-services Grafana uses `ha/upgrade-shared-monitoring.sh` (same `custom.ini` overlays; do not bind Grafana to `127.0.0.1` on that host).
+
+To check that Hub, the web app collector, and Telegraf are writing into InfluxDB:
+
+```bash
+cd integrations/grafana-influx
+sudo ./healthcheck.sh
+```
 
 Image rebuilds (CI / docker tree) download media via
 `/vagrant/docker/prepare_monitoring_media.sh`.

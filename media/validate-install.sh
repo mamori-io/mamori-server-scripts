@@ -28,6 +28,7 @@ REC_RAM_GB=8
 
 DOCKER="${DOCKER:-docker}"
 export DOCKER
+DOCKER_DAEMON_OK=0
 
 LIST_TIMEZONES=0
 LIST_TIMEZONES_FILTER=""
@@ -121,7 +122,7 @@ fi
 
 pass() { echo -e "${GREEN}[PASS]${RESET} $*"; }
 fail() { echo -e "${RED}[FAIL]${RESET} $*"; FAILS=$((FAILS + 1)); }
-warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; WARNS=$((WARNS + 1)); }
 info() { echo -e "       $*"; }
 
 bytes_to_gb() {
@@ -139,20 +140,19 @@ report_running_container_shm() {
         info "No running ${name} container; skipped /dev/shm check"
         return 0
     fi
+    info "$DOCKER exec $name df -h /dev/shm"
     shm_cfg="$($DOCKER inspect -f '{{.HostConfig.ShmSize}}' "$name" 2>/dev/null || true)"
     shm_df="$($DOCKER exec "$name" df -h /dev/shm 2>/dev/null || true)"
     if [[ -z "$shm_df" ]]; then
         warn "Container ${name} is running but df /dev/shm failed"
         return 0
     fi
+    printf '%s\n' "$shm_df"
     if [[ "$shm_cfg" =~ ^[0-9]+$ && "$shm_cfg" -le 67108864 ]]; then
         warn "Container ${name} shared memory is ${shm_cfg} bytes (Docker default is 64MB). Recreate with --shm-size (install would use $(mamori_shm_size_from_memory))"
     else
         pass "Running ${name} /dev/shm (configured ${shm_cfg:-unknown} bytes)"
     fi
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && info "$line"
-    done <<<"$shm_df"
 }
 
 resolve_port_check() {
@@ -286,10 +286,19 @@ else
 
     if $DOCKER info >/dev/null 2>&1; then
         pass "Daemon is reachable"
-        report_running_container_shm
+        DOCKER_DAEMON_OK=1
     else
         warn "Binary present but daemon not reachable (start docker/podman before install)"
     fi
+fi
+echo ""
+
+# ---------- running container /dev/shm ----------
+echo "--- Container /dev/shm ---"
+if [[ "$DOCKER_DAEMON_OK" -eq 1 ]]; then
+    report_running_container_shm
+else
+    info "Docker daemon not reachable; skipped /dev/shm check"
 fi
 echo ""
 
