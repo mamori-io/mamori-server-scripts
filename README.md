@@ -12,7 +12,9 @@ Scripts for operating and installing a Mamori server.
 | `lib/` | Shared helpers (portal root password, timezone/swap, firewall) |
 | `server/` | Host checks (ports, dumps) |
 | `nginx/` | Host nginx install/verify/upgrade, container & gateway SSL, config refresh |
+| `cve-patches/` | Emergency CVE mitigations for running Mamori containers (patch + restart + verify) |
 | `integrations/presidio/` | Presidio analyzer/anonymizer install, upgrade, uninstall (image build is `docker-db-scripts/presidio`) |
+| `integrations/openbao/` | OpenBao install, Mamori AppRole/KV bootstrap, uninstall |
 | `integrations/grafana-influx/` | Check that Hub, the web app, and Telegraf are writing into InfluxDB |
 
 ## Portal root password (`MAMORI_ROOT_PASSWORD`)
@@ -26,6 +28,8 @@ Install helpers:
 - `media/validate-install.sh` — ports, disk, Docker/Podman, hostname, timezone (list/set), swap (optional add); reports whether install will prompt for portal root (Ubuntu and Red Hat)
 - `media/install-*.sh` — prompt for (or use exported) `MAMORI_ROOT_PASSWORD` on first create/start, then scrub it from the container
 - `media/install-*.sh` and `media/upgrade-*.sh` — `--shm-size` defaults from host RAM; override with `--shm-size` (for example `--shm-size 1g`)
+- `media/upgrade-aio-postgres-to-18.sh` — migrate AIO Postgres volumes 14→18 before a Mamori PG18 bundle upgrade
+- `media/upgrade-*.sh --validate` — require on-disk AIO Postgres major to match the bundle (18)
 - `ha/validate-new-node.sh` — without `--env-file` = first node (install will prompt); with `--env-file` = additional node
 - `ha/install-ha-node.sh` / `ha/start-ha-node.sh` — no `--env-file` prompts for PG_* + portal root; `--env-file` never prompts; joining nodes get `DERBY_USER_ROOT` via extract/join; scrub after first boot
 
@@ -74,6 +78,39 @@ sudo ./healthcheck.sh
 
 Image rebuilds (CI / docker tree) download media via
 `/vagrant/docker/prepare_monitoring_media.sh`.
+
+## AIO PostgreSQL 18 (new installs and upgrades)
+
+New all-in-one Mamori images bundle **PostgreSQL 18** (port **54321**). A normal
+Mamori image upgrade recreates the container but **keeps** the Postgres volumes,
+so existing AIO sites on PostgreSQL 14 must migrate the data directory **before**
+upgrading Mamori to a PG18-only bundle.
+
+```bash
+cd media
+# 1) Migrate volumes 14 -> 18 (builds a dual-binary helper image on first run)
+bash upgrade-aio-postgres-to-18.sh
+# optional: bash upgrade-aio-postgres-to-18.sh --dry-run
+
+# 2) Confirm on-disk PG major matches the bundle, then upgrade Mamori
+bash upgrade-dockerhub.sh --validate   # or: bash upgrade-file.sh --validate
+bash upgrade-dockerhub.sh              # or: bash upgrade-file.sh
+
+# 3) After soak, remove leftover PG 14 data/config
+bash upgrade-aio-postgres-to-18.sh --prune-old
+```
+
+Notes:
+
+- `upgrade-dockerhub.sh` / `upgrade-file.sh` **always** gate on Postgres major
+  (bundle expects **18**). `--validate` runs that check without upgrading.
+- After a successful PG migrate, leave the old PG14-only Mamori container
+  **stopped**. Do not start it against the migrated volumes; run the Mamori
+  upgrade next in the same maintenance window.
+- Helper pieces: `lib/aio-pg-version.sh`, `media/aio-pg-upgrade-helper/`,
+  `media/config/pg18_conf.tgz`.
+
+HA Postgres is separate (`ha/install-ha-postgres.sh`, official `postgres:18`).
 
 ## Upgrade cleanup and uninstall
 

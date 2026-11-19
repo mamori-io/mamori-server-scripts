@@ -10,12 +10,63 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/ensure-host-timezone.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../lib/mamori-shm-size.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../lib/aio-pg-version.sh"
+
+DOCKER="${DOCKER:-sudo docker}"
+CONTAINER_NAME="${CONTAINER_NAME:-mamori}"
+VALIDATE_ONLY=0
+
+usage() {
+    cat <<'EOF'
+Usage: upgrade-file.sh [options]
+
+Upgrade Mamori AIO from local mamori_mon_docker.tgz.
+
+Options:
+  --validate           Only check that AIO Postgres major matches this bundle;
+                       do not upgrade
+  --shm-size <size>    Container shared memory (default: from host RAM)
+  -h, --help           Show this help
+
+Postgres major must already match the bundle (18) before upgrade. If you are
+still on 14, run upgrade-aio-postgres-to-18.sh first.
+EOF
+}
+
+PRE_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --validate)
+            VALIDATE_ONLY=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            PRE_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${PRE_ARGS[@]+"${PRE_ARGS[@]}"}"
 
 mamori_shm_size_parse_args "$@" || exit 1
 if [[ ${#MAMORI_SHM_REMAINING[@]} -gt 0 ]]; then
     echo "ERROR: unexpected argument: ${MAMORI_SHM_REMAINING[*]}" >&2
+    usage >&2
     exit 1
 fi
+
+if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
+    aio_pg_require_bundle_major "$MAMORI_AIO_BUNDLE_PG_MAJOR"
+    exit $?
+fi
+
+aio_pg_require_bundle_major "$MAMORI_AIO_BUNDLE_PG_MAJOR" || exit 1
+
 mamori_shm_size_resolve || exit 1
 echo "Container shared memory: --shm-size ${MAMORI_SHM_SIZE}"
 
