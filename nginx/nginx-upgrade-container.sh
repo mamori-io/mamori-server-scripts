@@ -363,7 +363,7 @@ install_from_media() {
     sed 's/^/    /' "${extract}/nginx-org-stable/MANIFEST"
   fi
 
-  local id codename arch nginx_deb perl_deb
+  local id codename arch nginx_deb perl_deb deps_dir
   id=$(os_id)
   codename=$(os_codename)
   arch=$(container_arch)
@@ -379,9 +379,21 @@ install_from_media() {
   echo "  nginx deb: $(basename "$nginx_deb")"
   echo "  perl  deb: $(basename "$perl_deb")"
 
+  # Distro perl deps shipped next to the nginx debs by nginx-get-media.sh
+  deps_dir="$(dirname "$perl_deb")/distro-deps"
+  if [ -d "$deps_dir" ] && ls "$deps_dir"/*.deb >/dev/null 2>&1; then
+    echo "  distro-deps:"
+    ls -1 "$deps_dir"/*.deb | sed 's|.*/|    |'
+  else
+    warn "no distro-deps/ in media for ${codename}; rebuild with a current nginx-get-media.sh if perl Depends fail"
+  fi
+
   if [ "$DRY_RUN" = "1" ]; then
     echo "=== dry-run (no packages installed) ==="
-    echo "  would dpkg -i:"
+    echo "  would dpkg -i (distro-deps first, then nginx):"
+    if [ -d "$deps_dir" ]; then
+      ls -1 "$deps_dir"/*.deb 2>/dev/null | sed 's/^/    /' || true
+    fi
     echo "    $nginx_deb"
     echo "    $perl_deb"
     return 0
@@ -389,6 +401,11 @@ install_from_media() {
 
   is_debian_family || fail "media .deb install requires a Debian/Ubuntu container"
   export DEBIAN_FRONTEND=noninteractive
+  if [ -d "$deps_dir" ] && ls "$deps_dir"/*.deb >/dev/null 2>&1; then
+    echo "Installing distro perl deps..."
+    # shellcheck disable=SC2086
+    dpkg --force-confold --force-confdef -i "$deps_dir"/*.deb
+  fi
   dpkg --force-confold --force-confdef -i "$nginx_deb" "$perl_deb"
 }
 

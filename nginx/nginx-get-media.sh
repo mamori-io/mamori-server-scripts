@@ -9,6 +9,10 @@
 # Packages come from nginx.org (not Ubuntu/RHEL distro nginx). The tarball is
 # matched to the *container* OS (Ubuntu noble/jammy, etc.), not the host OS.
 #
+# Also fetches Ubuntu/Debian *perl* runtime deps required by nginx-module-perl
+# (perl, libperl*, …) from the distro archive so air-gapped dpkg -i can succeed
+# when the container's perl is older than the module's Depends.
+#
 # Usage:
 #   ./nginx-get-media.sh
 #   ./nginx-get-media.sh --codename noble --arch amd64 --dir /tmp
@@ -35,8 +39,12 @@ usage() {
   cat <<EOF
 Usage: $0 [options]
 
-Download nginx.org stable packages (nginx + nginx-module-perl) into a .tgz
-for air-gapped \`nginx-upgrade-container.sh --media-file=\`.
+Download nginx.org stable packages (nginx + nginx-module-perl) plus the
+Ubuntu/Debian perl deps those packages need into a .tgz for air-gapped
+\`nginx-upgrade-container.sh --media-file=\`.
+
+Target the *container* release/arch (not this download host):
+  --codename noble,jammy --arch amd64
 
 Options:
   --distro ubuntu|debian     Default: ubuntu (Mamori container)
@@ -49,7 +57,7 @@ Options:
 
 Examples:
   bash nginx-get-media.sh
-  bash nginx-get-media.sh --codename noble,jammy --dir /tmp
+  bash nginx-get-media.sh --codename noble,jammy --dir .
   bash nginx-get-media.sh --from-container mamori --dir /tmp
 EOF
 }
@@ -177,6 +185,188 @@ assert_deb() {
   fi
 }
 
+# Read a control field from a .deb (Depends, Pre-Depends, …).
+deb_field() {
+  local deb="$1" field="$2"
+  if command -v dpkg-deb >/dev/null 2>&1; then
+    dpkg-deb -f "$deb" "$field" 2>/dev/null || true
+    return 0
+  fi
+  local tmp control_tar
+  tmp=$(mktemp -d)
+  (
+    cd "$tmp"
+    ar x "$deb" >/dev/null
+    control_tar=$(ls control.tar.* 2>/dev/null | head -1)
+    [ -n "$control_tar" ] || exit 1
+    tar xf "$control_tar"
+    awk -v f="$field" '
+      BEGIN { IGNORECASE=0 }
+      $0 ~ ("^" f ":") {
+        sub(/^[^:]+:[[:space:]]*/, "")
+        val=$0
+        while (getline > 0 && $0 ~ /^[[:space:]]/) {
+          sub(/^[[:space:]]+/, "")
+          val=val " " $0
+        }
+        print val
+        exit
+      }
+    ' control
+  )
+  rm -rf "$tmp"
+}
+
+# Base URL for distro pool downloads (amd64 vs ports).
+distro_archive_base() {
+  case "$DISTRO" in
+    ubuntu)
+      if [ "$ARCH" = "amd64" ]; then
+        echo "http://archive.ubuntu.com/ubuntu"
+      else
+        echo "http://ports.ubuntu.com/ubuntu-ports"
+      fi
+      ;;
+    debian)
+      echo "http://deb.debian.org/debian"
+      ;;
+  esac
+}
+
+# Append Packages.gz contents from a distro suite into $1.
+append_distro_packages() {
+  local out="$1" suite="$2" component="$3"
+  local base gz
+  base=$(distro_archive_base)
+  gz="${WORK}/pkgidx-${suite}-${component}-${ARCH}.gz"
+  if download "${base}/dists/${suite}/${component}/binary-${ARCH}/Packages.gz" "$gz" 2>/dev/null; then
+    gzip -dc "$gz" >> "$out"
+    echo "" >> "$out"
+    rm -f "$gz"
+    return 0
+  fi
+  return 1
+}
+
+# Build a merged Packages index for codename (+ updates/security for Ubuntu).
+build_distro_packages_index() {
+  local codename="$1" out="$2"
+  : > "$out"
+  case "$DISTRO" in
+    ubuntu)
+      append_distro_packages "$out" "$codename" main || true
+      append_distro_packages "$out" "${codename}-updates" main || true
+      append_distro_packages "$out" "${codename}-security" main || true
+      # perl is in main; universe as a fallback for odd deps
+      append_distro_packages "$out" "$codename" universe || true
+      append_distro_packages "$out" "${codename}-updates" universe || true
+      append_distro_packages "$out" "${codename}-security" universe || true
+      ;;
+    debian)
+      append_distro_packages "$out" "$codename" main || true
+      append_distro_packages "$out" "${codename}-updates" main || true
+      ;;
+  esac
+  [ -s "$out" ] || {
+    echo "ERROR: could not download ${DISTRO} Packages indexes for ${codename}/${ARCH}" >&2
+    exit 1
+  }
+}
+
+# Package names from a Depends/Pre-Depends line (first alternative of each clause).
+depend_package_names() {
+  local depends_line="$1"
+  [ -n "$depends_line" ] || return 0
+  echo "$depends_line" | tr ',' '\n' | while read -r clause; do
+    clause=$(echo "$clause" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ -n "$clause" ] || continue
+    # first alternative before |
+    clause=${clause%%|*}
+    clause=$(echo "$clause" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    # strip version and arch qualifiers: pkg (>= 1.2), pkg:any
+    local name
+    name=$(echo "$clause" | awk '{print $1}' | sed 's/:.*//')
+    case "$name" in
+      ""|nginx|nginx-module-perl) continue ;;
+    esac
+    # Only perl runtime deps — keeps media small and fixes known air-gap failures.
+    case "$name" in
+      perl|perl-*|libperl*)
+        echo "$name"
+        ;;
+    esac
+  done
+}
+
+# Download Ubuntu/Debian perl-related deps required by nginx-module-perl.
+fetch_distro_perl_deps() {
+  local module_deb="$1" codename="$2" dest_dir="$3"
+  local deps_dir="${dest_dir}/distro-deps"
+  local idx depends pre names name rec ver file base dest
+  local fetched=0
+
+  mkdir -p "$deps_dir"
+  idx="${dest_dir}/DistroPackages"
+  echo "  Fetching ${DISTRO} package indexes for perl deps (${codename}/${ARCH})..."
+  build_distro_packages_index "$codename" "$idx"
+
+  depends=$(deb_field "$module_deb" Depends)
+  pre=$(deb_field "$module_deb" Pre-Depends)
+  names=$(
+    {
+      depend_package_names "$depends"
+      depend_package_names "$pre"
+    } | sort -u
+  )
+
+  if [ -z "$names" ]; then
+    echo "  WARN: no perl/libperl Depends parsed from $(basename "$module_deb"); distro-deps may be empty"
+    return 0
+  fi
+
+  base=$(distro_archive_base)
+  echo "  Distro perl deps to fetch:"
+  for name in $names; do
+    rec=$(pkg_record "$idx" "$name" || true)
+    if [ -z "$rec" ]; then
+      echo "    SKIP ${name} (not in ${DISTRO} Packages — likely virtual)"
+      continue
+    fi
+    ver=${rec%% *}
+    file=${rec#* }
+    dest="${deps_dir}/$(basename "$file")"
+    echo "    ${name} ${ver}"
+    download "${base}/${file}" "$dest"
+    assert_deb "$dest"
+    fetched=$((fetched + 1))
+
+    # One level: if we pulled perl, also pull matching libperl* it Depends on.
+    if [ "$name" = "perl" ]; then
+      local perl_deps drec dver dfile ddest dname
+      perl_deps=$(deb_field "$dest" Depends)
+      for dname in $(depend_package_names "$perl_deps"); do
+        [ "$dname" != "perl" ] || continue
+        drec=$(pkg_record "$idx" "$dname" || true)
+        [ -n "$drec" ] || continue
+        dver=${drec%% *}
+        dfile=${drec#* }
+        ddest="${deps_dir}/$(basename "$dfile")"
+        if [ -f "$ddest" ]; then
+          continue
+        fi
+        echo "    ${dname} ${dver} (via perl)"
+        download "${base}/${dfile}" "$ddest"
+        assert_deb "$ddest"
+        fetched=$((fetched + 1))
+      done
+    fi
+  done
+
+  echo "  distro-deps: ${fetched} package(s) in ${deps_dir}"
+  # Record names for MANIFEST aggregation
+  DISTRO_DEPS_ALL="${DISTRO_DEPS_ALL} $(ls -1 "$deps_dir" 2>/dev/null | tr '\n' ' ')"
+}
+
 WORK=$(mktemp -d)
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -197,6 +387,7 @@ fi
 
 NGINX_VERSION=""
 CODENAME_LIST=""
+DISTRO_DEPS_ALL=""
 IFS=',' read -r -a CODE_ARR <<< "$CODENAMES"
 for raw in "${CODE_ARR[@]}"; do
   codename=$(echo "$raw" | tr -d ' ')
@@ -231,6 +422,8 @@ for raw in "${CODE_ARR[@]}"; do
   download "https://nginx.org/packages/${DISTRO}/${perl_file}" "${dest_dir}/$(basename "$perl_file")"
   assert_deb "${dest_dir}/$(basename "$nginx_file")"
   assert_deb "${dest_dir}/$(basename "$perl_file")"
+
+  fetch_distro_perl_deps "${dest_dir}/$(basename "$perl_file")" "$codename" "$dest_dir"
 done
 
 CODENAME_LIST=$(echo "$CODENAME_LIST" | xargs)
@@ -242,6 +435,7 @@ else
   OUT_NAME="nginx-org-stable-${SHORT_VER}-${DISTRO}-${ARCH}.tgz"
 fi
 
+DISTRO_DEPS_ALL=$(echo "$DISTRO_DEPS_ALL" | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')
 cat > "${ROOT}/MANIFEST" <<EOF
 MEDIA_TYPE=nginx-org-stable
 NGINX_VERSION=${NGINX_VERSION}
@@ -251,6 +445,7 @@ ARCH=${ARCH}
 CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SOURCE=https://nginx.org/packages/${DISTRO}
 PACKAGES=nginx nginx-module-perl
+DISTRO_PERL_DEPS=${DISTRO_DEPS_ALL:-none}
 EOF
 
 mkdir -p "$OUT_DIR"
