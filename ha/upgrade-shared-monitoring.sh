@@ -17,6 +17,9 @@
 #   ./upgrade-shared-monitoring.sh grafana
 #   ./upgrade-shared-monitoring.sh --config /path/to/monitoring-upgrade.env
 #
+# Air-gapped host (tarball from media/monitoring-get-media.sh; no download):
+#   ./upgrade-shared-monitoring.sh --media /path/to/mamori-monitoring-....tgz
+#
 
 set -euo pipefail
 
@@ -30,8 +33,12 @@ INFLUXDB_URL="https://dl.influxdata.com/influxdb/releases/v${INFLUXDB_VERSION}/i
 
 VERIFY=0
 TARGET="both"
+MEDIA_FILE=""
 PROFILE_PATH="${MONITORING_PROFILE:-${SCRIPT_DIR}/monitoring-upgrade.env}"
 VERIFY_ERRORS=0
+MEDIA_EXTRACT=""
+GRAFANA_MEDIA_TGZ=""
+INFLUX_MEDIA_TGZ=""
 
 # Discovered / profile fields (defaults before discover/load)
 GRAFANA_MODE=none
@@ -52,16 +59,24 @@ INFLUX_CURRENT_VERSION=
 
 usage() {
   cat <<EOF
-Usage: $0 [both|grafana|influxdb] [--verify] [--config PATH]
+Usage: $0 [both|grafana|influxdb] [--verify] [--config PATH] [--media PATH]
 
   --verify   Discover install layout, validate it, write a profile file.
-             Does not download or mutate binaries.
+             Does not download or mutate binaries. Does not accept --media.
   (default)  Upgrade using the profile from a prior --verify.
   --config   Profile path (default: ${SCRIPT_DIR}/monitoring-upgrade.env
              or \$MONITORING_PROFILE).
+  --media PATH
+             Air-gap: tarball from media/monitoring-get-media.sh.
+             Skips the Grafana and InfluxDB downloads.
+  --media-file PATH
+             Same as --media.
 
 Supported Grafana modes: host-tree, container-fs
 Supported Influx modes:  host-tree, host-package, container
+
+Air-gapped host:
+  sudo $0 --media=/path/to/mamori-monitoring-grafana-VERSION-influxdb-VERSION-linux-amd64.tgz
 EOF
 }
 
@@ -75,6 +90,21 @@ while [ $# -gt 0 ]; do
       PROFILE_PATH="${1:-}"
       if [ -z "$PROFILE_PATH" ]; then
         echo "ERROR: --config requires a path" >&2
+        exit 1
+      fi
+      ;;
+    --media-file=*)
+      MEDIA_FILE="${1#--media-file=}"
+      if [ -z "$MEDIA_FILE" ]; then
+        echo "ERROR: --media-file needs a path" >&2
+        exit 1
+      fi
+      ;;
+    --media|--media-file)
+      shift
+      MEDIA_FILE="${1:-}"
+      if [ -z "$MEDIA_FILE" ]; then
+        echo "ERROR: --media needs a path" >&2
         exit 1
       fi
       ;;
@@ -93,6 +123,11 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+if [ "$VERIFY" -eq 1 ] && [ -n "$MEDIA_FILE" ]; then
+  echo "ERROR: --media is only valid for upgrade, not --verify" >&2
+  exit 1
+fi
 
 ok() { echo "  OK: $*"; }
 warn() { echo "  WARN: $*"; }
@@ -446,9 +481,65 @@ assert_profile_usable() {
   esac
 }
 
+manifest_get() {
+  awk -F= -v k="$2" '$1==k { sub(/^[^=]*=/,""); print; exit }' "$1"
+}
+
+prepare_monitoring_media() {
+  [ -f "$MEDIA_FILE" ] || { echo "ERROR: media file not found: $MEDIA_FILE" >&2; exit 1; }
+  MEDIA_EXTRACT=$(mktemp -d)
+  trap 'rm -rf "$MEDIA_EXTRACT"' EXIT
+  tar xzf "$MEDIA_FILE" -C "$MEDIA_EXTRACT"
+  local manifest mtype gver iver arch gfile ifile
+  manifest="${MEDIA_EXTRACT}/mamori-monitoring/MANIFEST"
+  if [ ! -f "$manifest" ]; then
+    echo "ERROR: media has no mamori-monitoring/MANIFEST (expected media/monitoring-get-media.sh output)" >&2
+    exit 1
+  fi
+  mtype=$(manifest_get "$manifest" MEDIA_TYPE)
+  gver=$(manifest_get "$manifest" GRAFANA_VERSION)
+  iver=$(manifest_get "$manifest" INFLUXDB_VERSION)
+  arch=$(manifest_get "$manifest" ARCH)
+  gfile=$(manifest_get "$manifest" GRAFANA_FILE)
+  ifile=$(manifest_get "$manifest" INFLUXDB_FILE)
+  if [ "$mtype" != "mamori-monitoring" ]; then
+    echo "ERROR: MEDIA_TYPE is '${mtype:-missing}', expected mamori-monitoring" >&2
+    exit 1
+  fi
+  if [ "$gver" != "$GRAFANA_VERSION" ]; then
+    echo "ERROR: media Grafana version '${gver:-missing}' != ${GRAFANA_VERSION}" >&2
+    exit 1
+  fi
+  if [ "$iver" != "$INFLUXDB_VERSION" ]; then
+    echo "ERROR: media InfluxDB version '${iver:-missing}' != ${INFLUXDB_VERSION}" >&2
+    exit 1
+  fi
+  if [ "$arch" != "amd64" ]; then
+    echo "ERROR: media ARCH is '${arch:-missing}', expected amd64" >&2
+    exit 1
+  fi
+  [ -n "$gfile" ] || gfile="grafana-enterprise-${gver}.linux-amd64.tar.gz"
+  [ -n "$ifile" ] || ifile="influxdb-${iver}_linux_amd64.tar.gz"
+  GRAFANA_MEDIA_TGZ="${MEDIA_EXTRACT}/mamori-monitoring/${gfile}"
+  INFLUX_MEDIA_TGZ="${MEDIA_EXTRACT}/mamori-monitoring/${ifile}"
+  if [ ! -f "$GRAFANA_MEDIA_TGZ" ] || [ ! -f "$INFLUX_MEDIA_TGZ" ]; then
+    echo "ERROR: media archive is missing ${gfile} or ${ifile}" >&2
+    exit 1
+  fi
+  echo "Using monitoring media ${MEDIA_FILE}"
+  echo "  Grafana ${gver}"
+  echo "  InfluxDB ${iver}"
+}
+
 download_grafana_extract() {
   local work="$1"
   # Status on stderr so $(...) only captures the extract path.
+  if [ -n "$GRAFANA_MEDIA_TGZ" ]; then
+    echo "Using local Grafana tarball ${GRAFANA_MEDIA_TGZ}" >&2
+    tar xzf "$GRAFANA_MEDIA_TGZ" -C "$work"
+    echo "${work}/grafana-${GRAFANA_VERSION}"
+    return 0
+  fi
   echo "Downloading Grafana ${GRAFANA_VERSION} ..." >&2
   curl -fL --retry 3 -o "${work}/grafana.tgz" "$GRAFANA_URL"
   tar xzf "${work}/grafana.tgz" -C "$work"
@@ -458,6 +549,12 @@ download_grafana_extract() {
 download_influx_extract() {
   local work="$1"
   # Status on stderr so $(...) only captures the extract path.
+  if [ -n "$INFLUX_MEDIA_TGZ" ]; then
+    echo "Using local InfluxDB tarball ${INFLUX_MEDIA_TGZ}" >&2
+    tar xzf "$INFLUX_MEDIA_TGZ" -C "$work"
+    echo "${work}/influxdb-${INFLUXDB_VERSION}"
+    return 0
+  fi
   echo "Downloading InfluxDB ${INFLUXDB_VERSION} ..." >&2
   curl -fL --retry 3 -o "${work}/influx.tgz" "$INFLUXDB_URL"
   tar xzf "${work}/influx.tgz" -C "$work"
@@ -793,6 +890,10 @@ fi
 
 load_profile
 assert_profile_usable
+
+if [ -n "$MEDIA_FILE" ]; then
+  prepare_monitoring_media
+fi
 
 case "$TARGET" in
   grafana) upgrade_grafana ;;

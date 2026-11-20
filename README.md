@@ -49,13 +49,31 @@ Never store it in a host env file under this repo.
 Pinned for packaging: **Grafana Enterprise 13.2.3**, **InfluxDB OSS 1.13.1**.
 
 AIO containers mount Grafana and InfluxDB on named volumes, so upgrading the
-image alone does not replace those binaries. From the host (Mamori container
-name defaults to `mamori`):
+image alone does not replace those binaries. The container name defaults to
+`mamori` (`MAMORI_CONTAINER` overrides it).
+
+Connected host (the container must reach the Mamori mirror or the upstream download):
 
 ```bash
 cd media
 sudo ./update-monitoring-in-container.sh
+# sudo ./update-monitoring-in-container.sh grafana
+# sudo ./update-monitoring-in-container.sh influxdb
 ```
+
+Air-gapped host — build the media tarball on a connected machine, copy the `.tgz` over, then install from it. Nothing is downloaded at upgrade time.
+
+```bash
+# connected machine
+cd media
+./monitoring-get-media.sh --dir /tmp
+
+# air-gapped Mamori host
+cd media
+sudo ./update-monitoring-in-container.sh --media=/tmp/mamori-monitoring-grafana-13.2.3-influxdb-1.13.1-linux-amd64.tgz
+```
+
+`--media` and `--media-file` are the same flag. The tarball must be `MEDIA_TYPE=mamori-monitoring` for Grafana 13.2.3 and InfluxDB 1.13.1.
 
 A clean install can crash-loop Grafana 13 (`missing configuration for current encryption provider misconfigured`) and leak plugin processes until the container cannot fork. Packaged `defaults.ini` must stay; Mamori overlays go in `conf/custom.ini`. Nginx must 301 `/monitor` to `/monitor/` or the Monitor menu hits Phoenix (`Invalid URL`).
 
@@ -67,7 +85,7 @@ sudo ./fix_grafana_13.sh --validate
 
 `--validate` checks packaged defaults (`[secrets_manager]`, `[cloud_migration]`), `.defaults.keep`, `custom.ini` (encryption, alerting annotations, GMS off, `serve_from_sub_path`, JWT `url_login`), nginx `location = /monitor`, listen on 3000, `HTTP Server Listen` / `subUrl=/monitor`, no encryption/GMS/`newosproc` errors, and that plugin processes are not leaking. The default repair run applies those settings, then validates.
 
-HA shared-services Grafana uses `ha/upgrade-shared-monitoring.sh` (same `custom.ini` overlays; do not bind Grafana to `127.0.0.1` on that host).
+HA shared-services Grafana uses `ha/upgrade-shared-monitoring.sh` (same `custom.ini` overlays; do not bind Grafana to `127.0.0.1` on that host). On an air-gapped shared-services host, pass the same tarball: `sudo ./upgrade-shared-monitoring.sh --media=/path/to/mamori-monitoring-....tgz` after `--verify`. `--verify` does not take `--media`.
 
 To check that Hub, the web app collector, and Telegraf are writing into InfluxDB:
 

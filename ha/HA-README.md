@@ -282,6 +282,10 @@ sudo ./upgrade-shared-monitoring.sh                   # both
 # sudo ./upgrade-shared-monitoring.sh grafana
 # sudo ./upgrade-shared-monitoring.sh influxdb
 
+# Air-gapped host: same profile, no download. Build the tarball on a
+# connected machine with media/monitoring-get-media.sh, then:
+# sudo ./upgrade-shared-monitoring.sh --media=/path/to/mamori-monitoring-grafana-13.2.3-influxdb-1.13.1-linux-amd64.tgz
+
 # Optional: explicit profile path
 # sudo ./upgrade-shared-monitoring.sh --verify --config /var/lib/mamori/monitoring-upgrade.env
 # sudo ./upgrade-shared-monitoring.sh --config /var/lib/mamori/monitoring-upgrade.env
